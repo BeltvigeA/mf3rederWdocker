@@ -42,3 +42,9 @@ def test_process_file():
     result = response.json()
     assert 'plateImage' in result
     assert result['values']['model printing time'] == '10'
+
+
+def test_testRequest():
+    response = client.get('/testRequest')
+    assert response.status_code == 200
+    assert response.json() == {'status': 'ok'}
