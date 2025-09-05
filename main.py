@@ -6,6 +6,11 @@ import re
 
 apiApp = FastAPI()
 
+
+@apiApp.get('/testRequest')
+async def testRequest():
+    return {'status': 'ok'}
+
 searchKeys = [
     'model printing time',
     'total filament weight',
