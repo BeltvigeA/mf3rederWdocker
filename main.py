@@ -36,7 +36,7 @@ async def processFile(gcode3mf: UploadFile = File(...)):
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail='plate_1 not found') from exc
             try:
-                with archive.open('gcode_1') as gcodeFile:
+                with archive.open('metadata/gcode_1') as gcodeFile:
                     gcodeContent = gcodeFile.read().decode('utf-8', errors='ignore')
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail='gcode_1 not found') from exc
