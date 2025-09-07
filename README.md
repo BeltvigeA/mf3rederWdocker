@@ -1,6 +1,6 @@
 # FastAPI GCode Service
 
-This service exposes a FastAPI endpoint that accepts a `.gcode.3mf` file, extracts metadata, and returns a base64 image along with selected G-code values.
+This service exposes a FastAPI endpoint that accepts a `.3mf` or `.gcode.3mf` file, extracts metadata, and returns a base64 image along with selected G-code values.
 
 ## Running locally
 
@@ -9,12 +9,21 @@ pip install -r requirements.txt
 uvicorn main:apiApp --host 0.0.0.0 --port 8080
 ```
 
-## Deploying to Cloud Run without a Dockerfile
-
-Google Cloud Run can build this service directly from source using [Cloud Buildpacks](https://cloud.google.com/run/docs/deploying-source-code). Ensure you are authenticated with `gcloud` and run:
+## Build and run with Docker
 
 ```bash
-gcloud run deploy gcode-service --source . --region REGION --allow-unauthenticated
+docker build -t gcode-service .
+docker run -p 8080:80 gcode-service
+```
+
+## Deploy to Google Cloud Run using Docker
+
+```bash
+gcloud builds submit --tag gcr.io/PROJECT_ID/gcode-service
+gcloud run deploy gcode-service \
+  --image gcr.io/PROJECT_ID/gcode-service \
+  --region REGION \
+  --allow-unauthenticated
 ```
 
 ## Endpoint

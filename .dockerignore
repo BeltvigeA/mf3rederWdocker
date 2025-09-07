@@ -1,0 +1,7 @@
+__pycache__
+.git
+.gitignore
+Dockerfile
+README.md
+*.pytest_cache
+tests
