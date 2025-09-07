@@ -18,7 +18,7 @@ def buildSample3mf():
             ),
         )
         archive.writestr(
-            'gcode_1',
+            'metadata/plate_1.gcode',
             '; model printing time = 10\n'
             '; total filament weight = 5\n'
             '; enable_support = True\n'
@@ -32,11 +32,9 @@ def buildSample3mf():
     return memoryZip.getvalue()
 
 
-def test_process_file():
+def testProcessFileGcode3mf():
     sampleData = buildSample3mf()
-    files = {
-        'gcode3mf': ('test.gcode.3mf', sampleData, 'application/octet-stream')
-    }
+    files = {'gcode3mf': ('test.gcode.3mf', sampleData, 'application/octet-stream')}
     response = client.post('/process', files=files)
     assert response.status_code == 200
     result = response.json()
@@ -44,7 +42,16 @@ def test_process_file():
     assert result['values']['model printing time'] == '10'
 
 
-def test_testRequest():
+def testProcessFile3mf():
+    sampleData = buildSample3mf()
+    files = {'gcode3mf': ('test.3mf', sampleData, 'application/octet-stream')}
+    response = client.post('/process', files=files)
+    assert response.status_code == 200
+    result = response.json()
+    assert result['values']['printer_model'] == 'TestPrinter'
+
+
+def testTestRequest():
     response = client.get('/testRequest')
     assert response.status_code == 200
     assert response.json() == {'status': 'ok'}
