@@ -12,8 +12,8 @@ uvicorn main:apiApp --host 0.0.0.0 --port 8080
 ## Build and run with Docker
 
 ```bash
-docker build -t gcode-service .
-docker run -p 8080:80 gcode-service
+docker build -t mf3-reader-gcode .
+docker run -p 8080:8080 mf3-reader-gcode
 ```
 
 ## Deploy to Google Cloud Run using Docker
