@@ -5,7 +5,11 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN pip install --no-cache-dir fastapi uvicorn python-multipart
+
 COPY . .
+
+RUN python -m compileall .
 
 EXPOSE 8080
 

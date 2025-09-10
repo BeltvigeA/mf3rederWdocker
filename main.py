@@ -31,12 +31,12 @@ async def processFile(gcode3mf: UploadFile = File(...)):
     try:
         with zipfile.ZipFile(zipBuffer) as archive:
             try:
-                with archive.open('metadata/plate_1.png') as imageFile:
+                with archive.open('Metadata/plate_1.png') as imageFile:
                     plateImageBytes = imageFile.read()
             except KeyError as exc:
-                raise HTTPException(status_code=404, detail='plate_1 not found') from exc
+                raise HTTPException(status_code=404, detail='plate_1.png not found') from exc
             try:
-                with archive.open('metadata/plate_1.gcode') as gcodeFile:
+                with archive.open('Metadata/plate_1.gcode') as gcodeFile:
                     gcodeContent = gcodeFile.read().decode('utf-8', errors='ignore')
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail='plate_1.gcode not found') from exc
