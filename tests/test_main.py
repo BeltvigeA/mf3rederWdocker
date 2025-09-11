@@ -20,7 +20,7 @@ def buildSample3mf():
         archive.writestr(
             'metadata/plate_1.gcode',
             '; model printing time = 10\n'
-            '; total filament weight = 5\n'
+            '; total filament weight [g] = 5\n'
             '; enable_support = True\n'
             '; filament_type = PLA\n'
             '; layer_height = 0.2\n'
