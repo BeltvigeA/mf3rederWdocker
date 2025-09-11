@@ -1,10 +1,19 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import io
 import zipfile
 import base64
 import re
 
 apiApp = FastAPI()
+
+apiApp.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @apiApp.get('/testRequest')
