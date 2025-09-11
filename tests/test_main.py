@@ -55,3 +55,15 @@ def testTestRequest():
     response = client.get('/testRequest')
     assert response.status_code == 200
     assert response.json() == {'status': 'ok'}
+
+
+def testCorsHeaders():
+    response = client.options(
+        '/testRequest',
+        headers={
+            'origin': 'http://example.com',
+            'access-control-request-method': 'GET',
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers['access-control-allow-origin'] == '*'
