@@ -12,13 +12,25 @@ def buildSample3mf():
     memoryZip = io.BytesIO()
     with zipfile.ZipFile(memoryZip, 'w') as archive:
         archive.writestr(
-            'metadata/plate_1.png',
+            'Metadata/plate_1.png',
             base64.b64decode(
                 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8/x8AAwMCAO/a/94AAAAASUVORK5CYII='
             ),
         )
         archive.writestr(
-            'metadata/plate_1.gcode',
+            'Metadata/pick_1.png',
+            base64.b64decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8/x8AAwMCAO/a/94AAAAASUVORK5CYII='
+            ),
+        )
+        archive.writestr(
+            'Metadata/top_1.png',
+            base64.b64decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8/x8AAwMCAO/a/94AAAAASUVORK5CYII='
+            ),
+        )
+        archive.writestr(
+            'Metadata/plate_1.gcode',
             '; model printing time: 0h 0m 10s; total estimated time: 0h 0m 10s\n'
             '; total filament length [mm] : 10.0,20.0\n'
             '; total filament volume [cm^3] : 1.0,2.0\n'
@@ -38,6 +50,14 @@ def buildSample3mf():
             '; sparse_infill_density = 20\n'
             '; printer_model = TestPrinter\n',
         )
+        archive.writestr(
+            'Metadata/slice_info.config',
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<config><plate>'
+            '<object identify_id="1" name="test1" skipped="false" />'
+            '<object identify_id="2" name="test2" skipped="true" />'
+            '</plate></config>',
+        )
     memoryZip.seek(0)
     return memoryZip.getvalue()
 
@@ -49,6 +69,8 @@ def testProcessFileGcode3mf():
     assert response.status_code == 200
     result = response.json()
     assert 'plateImage' in result
+    assert 'pickImage' in result
+    assert 'topImage' in result
     values = result['values']
     assert values['printTimeSec'] == '10'
     assert values['objectsOnPlate'] == '3'
@@ -59,6 +81,10 @@ def testProcessFileGcode3mf():
     assert values['filamentPurgeGrams'] != '0'
     assert values['totalLayers'] == '5'
     assert values['maxZHeight'] == '10.5'
+    assert values['objects'] == [
+        {'identifyId': '1', 'name': 'test1', 'skipped': 'false'},
+        {'identifyId': '2', 'name': 'test2', 'skipped': 'true'},
+    ]
 
 
 def testProcessFile3mf():
@@ -67,6 +93,8 @@ def testProcessFile3mf():
     response = client.post('/process', files=files)
     assert response.status_code == 200
     result = response.json()
+    assert 'pickImage' in result
+    assert 'topImage' in result
     assert result['values']['printer_model'] == 'TestPrinter'
 
 
