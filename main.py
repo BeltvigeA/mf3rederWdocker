@@ -22,7 +22,7 @@ async def testRequest():
 
 searchKeys = [
     'model printing time',
-    'total filament weight',
+    'total filament weight [g]',
     'enable_support',
     'filament_type',
     'layer_height',
