@@ -5,6 +5,7 @@ import zipfile
 import base64
 import re
 import math
+import xml.etree.ElementTree as ET
 
 apiApp = FastAPI()
 
@@ -34,6 +35,11 @@ searchKeys = [
     'printer_model'
 ]
 
+
+def toCamelCase(text: str) -> str:
+    parts = text.split('_')
+    return parts[0] + ''.join(word.capitalize() for word in parts[1:])
+
 @apiApp.post('/process')
 async def processFile(gcode3mf: UploadFile = File(...)):
     if not gcode3mf.filename.endswith('.3mf'):
@@ -48,10 +54,25 @@ async def processFile(gcode3mf: UploadFile = File(...)):
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail='plate_1.png not found') from exc
             try:
+                with archive.open('Metadata/pick_1.png') as pickFile:
+                    pickImageBytes = pickFile.read()
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail='pick_1.png not found') from exc
+            try:
+                with archive.open('Metadata/top_1.png') as topFile:
+                    topImageBytes = topFile.read()
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail='top_1.png not found') from exc
+            try:
                 with archive.open('Metadata/plate_1.gcode') as gcodeFile:
                     gcodeContent = gcodeFile.read().decode('utf-8', errors='ignore')
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail='plate_1.gcode not found') from exc
+            try:
+                with archive.open('Metadata/slice_info.config') as sliceFile:
+                    sliceContent = sliceFile.read().decode('utf-8', errors='ignore')
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail='slice_info.config not found') from exc
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=400, detail='Corrupted archive') from exc
     resultValues = {}
@@ -117,10 +138,27 @@ async def processFile(gcode3mf: UploadFile = File(...)):
     if heightMatch:
         resultValues['maxZHeight'] = heightMatch.group(1)
 
+    objects = []
+    try:
+        root = ET.fromstring(sliceContent)
+        for element in root.findall('.//object'):
+            obj = {toCamelCase(k): v for k, v in element.attrib.items()}
+            objects.append(obj)
+    except ET.ParseError:
+        objects = []
+    resultValues['objects'] = objects
+
     resultValues.setdefault('slicerType', 'Unknown')
     resultValues.setdefault('estimatedPowerConsumptionWh', '0')
     resultValues.setdefault('buildPlateTemperature', '0')
     resultValues.setdefault('hotendTemperature', '0')
 
     plateImageBase64 = base64.b64encode(plateImageBytes).decode('utf-8')
-    return {'plateImage': plateImageBase64, 'values': resultValues}
+    pickImageBase64 = base64.b64encode(pickImageBytes).decode('utf-8')
+    topImageBase64 = base64.b64encode(topImageBytes).decode('utf-8')
+    return {
+        'plateImage': plateImageBase64,
+        'pickImage': pickImageBase64,
+        'topImage': topImageBase64,
+        'values': resultValues,
+    }
