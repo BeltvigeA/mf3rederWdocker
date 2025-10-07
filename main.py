@@ -5,6 +5,9 @@ import zipfile
 import base64
 import re
 import math
+from colorsys import rgb_to_hsv
+from typing import Any, Dict, List
+from PIL import Image, ImageDraw
 import xml.etree.ElementTree as ET
 
 apiApp = FastAPI()
@@ -40,12 +43,119 @@ def toCamelCase(text: str) -> str:
     parts = text.split('_')
     return parts[0] + ''.join(word.capitalize() for word in parts[1:])
 
+
+def segmentColorRegions(pickImageBytes: bytes) -> List[Dict[str, Any]]:
+    pickImage = Image.open(io.BytesIO(pickImageBytes)).convert('RGBA')
+    width, height = pickImage.size
+    pixelAccess = pickImage.load()
+    alphaMask = [[False for _ in range(width)] for _ in range(height)]
+    colorGrid = [[(0, 0, 0) for _ in range(width)] for _ in range(height)]
+    for pixelY in range(height):
+        for pixelX in range(width):
+            red, green, blue, alpha = pixelAccess[pixelX, pixelY]
+            alphaMask[pixelY][pixelX] = alpha > 0
+            colorGrid[pixelY][pixelX] = (red, green, blue)
+    visitedMask = [[False for _ in range(width)] for _ in range(height)]
+    regions: List[Dict[str, Any]] = []
+    for pixelY in range(height):
+        for pixelX in range(width):
+            if not alphaMask[pixelY][pixelX] or visitedMask[pixelY][pixelX]:
+                continue
+            targetColor = colorGrid[pixelY][pixelX]
+            stack = [(pixelX, pixelY)]
+            visitedMask[pixelY][pixelX] = True
+            sumRed = sumGreen = sumBlue = 0.0
+            sumX = sumY = 0.0
+            pixelCount = 0
+            while stack:
+                currentX, currentY = stack.pop()
+                red, green, blue = colorGrid[currentY][currentX]
+                sumRed += red
+                sumGreen += green
+                sumBlue += blue
+                sumX += currentX
+                sumY += currentY
+                pixelCount += 1
+                for offsetX, offsetY in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    neighborX = currentX + offsetX
+                    neighborY = currentY + offsetY
+                    if 0 <= neighborX < width and 0 <= neighborY < height and not visitedMask[neighborY][neighborX]:
+                        if alphaMask[neighborY][neighborX] and colorGrid[neighborY][neighborX] == targetColor:
+                            visitedMask[neighborY][neighborX] = True
+                            stack.append((neighborX, neighborY))
+            if pixelCount == 0:
+                continue
+            meanRed = sumRed / pixelCount
+            meanGreen = sumGreen / pixelCount
+            meanBlue = sumBlue / pixelCount
+            brightness = rgb_to_hsv(
+                meanRed / 255.0,
+                meanGreen / 255.0,
+                meanBlue / 255.0,
+            )[2]
+            centroidX = sumX / pixelCount
+            centroidY = sumY / pixelCount
+            regions.append({
+                'meanColor': (meanRed, meanGreen, meanBlue),
+                'brightness': brightness,
+                'centroid': (centroidX, centroidY),
+            })
+    pickImage.close()
+    orderedRegions = sorted(
+        regions,
+        key=lambda item: (
+            -item['brightness'],
+            -item['meanColor'][0],
+            -item['meanColor'][1],
+            -item['meanColor'][2],
+        ),
+    )
+    rankedRegions: List[Dict[str, Any]] = []
+    for index, region in enumerate(orderedRegions, start=1):
+        rankedRegions.append({
+            'order': index,
+            'centroid': region['centroid'],
+            'meanColor': tuple(int(round(value)) for value in region['meanColor']),
+            'brightness': region['brightness'],
+        })
+    return rankedRegions
+
+
+def drawOrderLabels(topImageBytes: bytes, rankedRegions: List[Dict[str, Any]]) -> bytes:
+    if not rankedRegions:
+        return topImageBytes
+    topImage = Image.open(io.BytesIO(topImageBytes)).convert('RGBA')
+    draw = ImageDraw.Draw(topImage)
+    for region in rankedRegions:
+        centroidX, centroidY = region['centroid']
+        textPosition = (float(centroidX), float(centroidY))
+        try:
+            draw.text(
+                textPosition,
+                str(region['order']),
+                fill=(255, 255, 255, 255),
+                anchor='mm',
+                stroke_width=1,
+                stroke_fill=(0, 0, 0, 255),
+            )
+        except TypeError:
+            draw.text(
+                textPosition,
+                str(region['order']),
+                fill=(255, 255, 255, 255),
+            )
+    outputBuffer = io.BytesIO()
+    topImage.save(outputBuffer, format='PNG')
+    topImage.close()
+    return outputBuffer.getvalue()
+
 @apiApp.post('/process')
 async def processFile(gcode3mf: UploadFile = File(...)):
     if not gcode3mf.filename.endswith('.3mf'):
         raise HTTPException(status_code=400, detail='Invalid file extension')
     fileData = await gcode3mf.read()
     zipBuffer = io.BytesIO(fileData)
+    rankedRegions: List[Dict[str, Any]] = []
     try:
         with zipfile.ZipFile(zipBuffer) as archive:
             try:
@@ -63,6 +173,8 @@ async def processFile(gcode3mf: UploadFile = File(...)):
                     topImageBytes = topFile.read()
             except KeyError as exc:
                 raise HTTPException(status_code=404, detail='top_1.png not found') from exc
+            rankedRegions = segmentColorRegions(pickImageBytes)
+            topImageBytes = drawOrderLabels(topImageBytes, rankedRegions)
             try:
                 with archive.open('Metadata/plate_1.gcode') as gcodeFile:
                     gcodeContent = gcodeFile.read().decode('utf-8', errors='ignore')
@@ -144,9 +256,31 @@ async def processFile(gcode3mf: UploadFile = File(...)):
         for element in root.findall('.//object'):
             obj = {toCamelCase(k): v for k, v in element.attrib.items()}
             objects.append(obj)
+        def safeIdentifyValue(item: Dict[str, Any]) -> int:
+            try:
+                return int(item.get('identifyId', ''))
+            except (TypeError, ValueError):
+                return math.inf
+        objects = sorted(objects, key=safeIdentifyValue)
     except ET.ParseError:
         objects = []
     resultValues['objects'] = objects
+
+    sortableObjects = []
+    for obj in objects:
+        try:
+            sortableObjects.append((int(obj.get('identifyId', '')), obj))
+        except (TypeError, ValueError):
+            continue
+    orderedObjects = []
+    for region, (_, obj) in zip(rankedRegions, sortableObjects):
+        orderedObjects.append({
+            'order': region['order'],
+            'identifyId': obj.get('identifyId'),
+            'name': obj.get('name'),
+            'skipped': obj.get('skipped'),
+        })
+    resultValues['orderedObjects'] = orderedObjects
 
     resultValues.setdefault('slicerType', 'Unknown')
     resultValues.setdefault('estimatedPowerConsumptionWh', '0')
