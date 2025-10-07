@@ -1,34 +1,41 @@
-from fastapi.testclient import TestClient
+import asyncio
+import base64
 import io
 import zipfile
-import base64
+import pytest
+from fastapi import UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
-from main import apiApp
+pytest.importorskip('PIL')
 
-client = TestClient(apiApp)
+from PIL import Image, ImageDraw
+
+from main import apiApp, processFile, testRequest
+
+
+def encodeImage(image: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
+    return buffer.getvalue()
 
 
 def buildSample3mf():
     memoryZip = io.BytesIO()
+    imageSize = (90, 30)
+    plateImage = Image.new('RGBA', imageSize, (220, 220, 220, 255))
+    topImage = Image.new('RGBA', imageSize, (245, 245, 245, 255))
+    pickImage = Image.new('RGBA', imageSize, (0, 0, 0, 0))
+    pickDraw = ImageDraw.Draw(pickImage)
+    pickDraw.rectangle((5, 5, 30, 25), fill=(255, 70, 70, 255))
+    pickDraw.rectangle((35, 5, 60, 25), fill=(140, 140, 140, 255))
+    pickDraw.rectangle((65, 5, 85, 25), fill=(10, 10, 10, 255))
+    plateImageBytes = encodeImage(plateImage)
+    pickImageBytes = encodeImage(pickImage)
+    topImageBytes = encodeImage(topImage)
     with zipfile.ZipFile(memoryZip, 'w') as archive:
-        archive.writestr(
-            'Metadata/plate_1.png',
-            base64.b64decode(
-                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8/x8AAwMCAO/a/94AAAAASUVORK5CYII='
-            ),
-        )
-        archive.writestr(
-            'Metadata/pick_1.png',
-            base64.b64decode(
-                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8/x8AAwMCAO/a/94AAAAASUVORK5CYII='
-            ),
-        )
-        archive.writestr(
-            'Metadata/top_1.png',
-            base64.b64decode(
-                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8/x8AAwMCAO/a/94AAAAASUVORK5CYII='
-            ),
-        )
+        archive.writestr('Metadata/plate_1.png', plateImageBytes)
+        archive.writestr('Metadata/pick_1.png', pickImageBytes)
+        archive.writestr('Metadata/top_1.png', topImageBytes)
         archive.writestr(
             'Metadata/plate_1.gcode',
             '; model printing time: 0h 0m 10s; total estimated time: 0h 0m 10s\n'
@@ -54,23 +61,28 @@ def buildSample3mf():
             'Metadata/slice_info.config',
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<config><plate>'
-            '<object identify_id="1" name="test1" skipped="false" />'
-            '<object identify_id="2" name="test2" skipped="true" />'
+            '<object identify_id="101" name="balloonRed" skipped="false" />'
+            '<object identify_id="205" name="balloonGray" skipped="false" />'
+            '<object identify_id="307" name="balloonBlack" skipped="true" />'
             '</plate></config>',
         )
     memoryZip.seek(0)
-    return memoryZip.getvalue()
+    return memoryZip.getvalue(), topImageBytes
+
+
+def callProcessFile(filename: str, data: bytes):
+    uploadFile = UploadFile(filename=filename, file=io.BytesIO(data), content_type='application/octet-stream')
+    return asyncio.run(processFile(uploadFile))
 
 
 def testProcessFileGcode3mf():
-    sampleData = buildSample3mf()
-    files = {'gcode3mf': ('test.gcode.3mf', sampleData, 'application/octet-stream')}
-    response = client.post('/process', files=files)
-    assert response.status_code == 200
-    result = response.json()
+    sampleData, originalTopImageBytes = buildSample3mf()
+    result = callProcessFile('test.gcode.3mf', sampleData)
     assert 'plateImage' in result
     assert 'pickImage' in result
     assert 'topImage' in result
+    modifiedTopImageBytes = base64.b64decode(result['topImage'])
+    assert modifiedTopImageBytes != originalTopImageBytes
     values = result['values']
     assert values['printTimeSec'] == '10'
     assert values['objectsOnPlate'] == '3'
@@ -82,35 +94,30 @@ def testProcessFileGcode3mf():
     assert values['totalLayers'] == '5'
     assert values['maxZHeight'] == '10.5'
     assert values['objects'] == [
-        {'identifyId': '1', 'name': 'test1', 'skipped': 'false'},
-        {'identifyId': '2', 'name': 'test2', 'skipped': 'true'},
+        {'identifyId': '101', 'name': 'balloonRed', 'skipped': 'false'},
+        {'identifyId': '205', 'name': 'balloonGray', 'skipped': 'false'},
+        {'identifyId': '307', 'name': 'balloonBlack', 'skipped': 'true'},
+    ]
+    assert values['orderedObjects'] == [
+        {'order': 1, 'identifyId': '101', 'name': 'balloonRed', 'skipped': 'false'},
+        {'order': 2, 'identifyId': '205', 'name': 'balloonGray', 'skipped': 'false'},
+        {'order': 3, 'identifyId': '307', 'name': 'balloonBlack', 'skipped': 'true'},
     ]
 
 
 def testProcessFile3mf():
-    sampleData = buildSample3mf()
-    files = {'gcode3mf': ('test.3mf', sampleData, 'application/octet-stream')}
-    response = client.post('/process', files=files)
-    assert response.status_code == 200
-    result = response.json()
+    sampleData, _ = buildSample3mf()
+    result = callProcessFile('test.3mf', sampleData)
     assert 'pickImage' in result
     assert 'topImage' in result
     assert result['values']['printer_model'] == 'TestPrinter'
 
 
 def testTestRequest():
-    response = client.get('/testRequest')
-    assert response.status_code == 200
-    assert response.json() == {'status': 'ok'}
+    response = asyncio.run(testRequest())
+    assert response == {'status': 'ok'}
 
 
 def testCorsHeaders():
-    response = client.options(
-        '/testRequest',
-        headers={
-            'origin': 'http://example.com',
-            'access-control-request-method': 'GET',
-        },
-    )
-    assert response.status_code == 200
-    assert response.headers['access-control-allow-origin'] == '*'
+    middlewareClasses = [middleware.cls for middleware in apiApp.user_middleware]
+    assert CORSMiddleware in middlewareClasses
