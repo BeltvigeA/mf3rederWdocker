@@ -7,7 +7,7 @@ import re
 import math
 from colorsys import rgb_to_hsv
 from typing import Any, Dict, List
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import xml.etree.ElementTree as ET
 
 apiApp = FastAPI()
@@ -24,6 +24,8 @@ apiApp.add_middleware(
 @apiApp.get('/testRequest')
 async def testRequest():
     return {'status': 'ok'}
+
+testRequest.__test__ = False
 
 searchKeys = [
     'model printing time',
@@ -126,6 +128,12 @@ def drawOrderLabels(topImageBytes: bytes, rankedRegions: List[Dict[str, Any]]) -
         return topImageBytes
     topImage = Image.open(io.BytesIO(topImageBytes)).convert('RGBA')
     draw = ImageDraw.Draw(topImage)
+    imageWidth, imageHeight = topImage.size
+    baseFontSize = max(int(min(imageWidth, imageHeight) * 0.12), 24)
+    try:
+        font = ImageFont.truetype('DejaVuSans-Bold.ttf', baseFontSize)
+    except (OSError, IOError):
+        font = ImageFont.load_default()
     for region in rankedRegions:
         centroidX, centroidY = region['centroid']
         textPosition = (float(centroidX), float(centroidY))
@@ -135,7 +143,8 @@ def drawOrderLabels(topImageBytes: bytes, rankedRegions: List[Dict[str, Any]]) -
                 str(region['order']),
                 fill=(255, 255, 255, 255),
                 anchor='mm',
-                stroke_width=1,
+                font=font,
+                stroke_width=max(baseFontSize // 10, 1),
                 stroke_fill=(0, 0, 0, 255),
             )
         except TypeError:
@@ -143,6 +152,7 @@ def drawOrderLabels(topImageBytes: bytes, rankedRegions: List[Dict[str, Any]]) -
                 textPosition,
                 str(region['order']),
                 fill=(255, 255, 255, 255),
+                font=font,
             )
     outputBuffer = io.BytesIO()
     topImage.save(outputBuffer, format='PNG')
