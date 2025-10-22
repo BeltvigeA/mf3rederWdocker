@@ -8,6 +8,7 @@ from parsing.file_loader import loadInput
 from parsing.gcode_view import buildGcodeView
 from parsing.router import extractParsedValues
 from parsing.slicer_detect import detectSlicer
+from parsing.valueNormalizer import normalizeToBambuFields
 
 apiApp = FastAPI()
 
@@ -38,7 +39,7 @@ async def processFile(gcodeUpload: UploadFile = File(...)):
     imagesPayload = {}
     if gview.containerType == '3mf' and guess.name == 'bambu':
         imagesPayload = enrichBambuAttachments(gview, parsedValues)
-    responseValues = dict(parsedValues.fieldValues)
+    responseValues = normalizeToBambuFields(parsedValues, guess)
     return {
         **imagesPayload,
         'values': responseValues,

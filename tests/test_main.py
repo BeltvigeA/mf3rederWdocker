@@ -4,6 +4,7 @@ import io
 import os
 import sys
 import zipfile
+from pathlib import Path
 
 import pytest
 from fastapi import UploadFile
@@ -22,6 +23,15 @@ def encodeImage(image: Image.Image) -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format='PNG')
     return buffer.getvalue()
+
+
+def assertBambuStandardDefaults(values):
+    assert values['slicerType'] == 'Unknown'
+    assert values['estimatedPowerConsumptionWh'] == '0'
+    assert values['buildPlateTemperature'] == '0'
+    assert values['hotendTemperature'] == '0'
+    assert isinstance(values['objects'], list)
+    assert isinstance(values['orderedObjects'], list)
 
 
 def buildSample3mf():
@@ -90,6 +100,10 @@ def testProcessFileGcode3mf():
     assert modifiedTopImageBytes != originalTopImageBytes
     values = result['values']
     assert values['printTimeSec'] == '10'
+    assert values['model printing time'] == '0h 0m 10s'
+    assert values['total filament weight [g]'] == '1.5,2.5'
+    assert values['total filament length [mm]'] == '10.0,20.0'
+    assert values['total filament volume [cm^3]'] == '1.0,2.0'
     assert values['objectsOnPlate'] == '3'
     assert values['filamentUsedGrams'] == '4.0'
     assert values['filamentWeights'] == [1.5, 2.5]
@@ -108,6 +122,7 @@ def testProcessFileGcode3mf():
         {'order': 2, 'identifyId': '205', 'name': 'balloonGray', 'skipped': 'false'},
         {'order': 3, 'identifyId': '307', 'name': 'balloonBlack', 'skipped': 'true'},
     ]
+    assertBambuStandardDefaults(values)
 
 
 def testProcessFileGcode():
@@ -118,11 +133,44 @@ def testProcessFileGcode():
     assert 'topImage' not in result
     values = result['values']
     assert values['printTimeSec'] == '10'
+    assert values['model printing time'] == '0h 0m 10s'
+    assert values['total filament weight [g]'] == '1.5,2.5'
+    assert values['total filament length [mm]'] == '10.0,20.0'
+    assert values['total filament volume [cm^3]'] == '1.0,2.0'
     assert values['objectsOnPlate'] == '3'
     assert values['filamentUsedGrams'] == '4.0'
     assert values['filamentWeights'] == [1.5, 2.5]
     assert values['filamentAnalysis'][0]['lengthMm'] == 10.0
     assert values['orderedObjects'] == []
+    assertBambuStandardDefaults(values)
+
+
+def testProcessFileEasyPrintGcode():
+    fixturePath = Path(__file__).parent / 'fixtures' / 'easyprint_sample.gcode'
+    sampleBytes = fixturePath.read_bytes()
+    result = callProcessFile('easyprint.gcode', sampleBytes)
+    values = result['values']
+    assert values['printTimeSec'] == '1244'
+    assert values['model printing time'] == '0h 20m 44s'
+    assert values['total filament weight [g]'] == '10.5'
+    assert values['total filament length [mm]'] == '123.45'
+    assert values['total filament volume [cm^3]'] == '3.456'
+    assert values['filamentUsedGrams'] == '10.5'
+    assert values['filamentWeights'] == [10.5]
+    assert values['filamentAnalysis'][0]['lengthMm'] == pytest.approx(123.45)
+    assert values['filamentAnalysis'][0]['volumeCm3'] == pytest.approx(3.456)
+    assert values['filamentAnalysis'][0]['weightG'] == pytest.approx(10.5)
+    assert values['objectsOnPlate'] == '2'
+    assert values['totalLayers'] == '50'
+    assert values['maxZHeight'] == '10'
+    assert values['printer_model'] == 'EasyPrint MK1'
+    assert values['nozzle_diameter'] == '0.4'
+    assert values['layer_height'] == '0.2'
+    assert values['filament_diameter'] == '1.75'
+    assert values['filament_density'] == '1.24'
+    assert values['filament_type'] == 'PLA'
+    assert values['filament_colour'] == '#FFAA00'
+    assertBambuStandardDefaults(values)
 
 
 def testTestRequest():
