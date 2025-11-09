@@ -9,8 +9,10 @@ COPY . .
 
 RUN python -m compileall .
 
+RUN chmod +x scripts/startServer.sh
+
 EXPOSE 8080
 
-CMD ["uvicorn", "main:apiApp", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["scripts/startServer.sh"]
 
 
