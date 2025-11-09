@@ -5,15 +5,25 @@ This service exposes a FastAPI endpoint that accepts a `.3mf` or `.gcode.3mf` fi
 ## Running locally
 
 ```bash
-pip install -r requirements.txt
-uvicorn main:apiApp --host 0.0.0.0 --port 8080
+pip install -r requirements.txt "uvicorn[standard]"
+./scripts/startServer.sh
+```
+
+To enable HTTP/2 locally, set the `HTTP2_CERT_FILE` and `HTTP2_KEY_FILE` environment variables to the paths of your TLS certificate and private key before running the startup script:
+
+```bash
+HTTP2_CERT_FILE=certs/server.crt HTTP2_KEY_FILE=certs/server.key ./scripts/startServer.sh
 ```
 
 ## Build and run with Docker
 
 ```bash
 docker build -t mf3-reader-gcode .
-docker run -p 8080:8080 mf3-reader-gcode
+docker run -p 8080:8080 \
+  -e HTTP2_CERT_FILE=/certs/server.crt \
+  -e HTTP2_KEY_FILE=/certs/server.key \
+  -v "$(pwd)/certs:/certs:ro" \
+  mf3-reader-gcode
 ```
 
 ## Deploy to Google Cloud Run using Docker
@@ -25,6 +35,8 @@ gcloud run deploy gcode-service \
   --region REGION \
   --allow-unauthenticated
 ```
+
+Deploying the refreshed image is sufficient—Cloud Run terminates TLS at the load balancer and forwards HTTP/2 traffic to the container over the internal network, so no additional certificate configuration is required inside the service.
 
 ## Endpoint
 
