@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
 import zipfile
 from typing import Optional, TYPE_CHECKING
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -135,6 +136,72 @@ async def list_plates(gcodeUpload: UploadFile = File(...)):
         )
     except Exception as e:
         logRequestStatus('list-plates', False, f'Error: {str(e)}')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': str(e)
+            },
+            status_code=500
+        )
+
+
+@apiApp.post('/split-plates')
+async def split_plates(
+    gcodeUpload: UploadFile = File(...),
+    selectedPlates: str = Form(...),
+    originalFilename: str = Form(None)
+):
+    """
+    Split a 3MF file into separate files for each selected plate
+    """
+    fileName = originalFilename or gcodeUpload.filename
+    logRequestReceived('split-plates', f'{fileName} - plates: {selectedPlates}')
+    try:
+        # Read file
+        fileBytes = await gcodeUpload.read()
+
+        # Parse selected plates
+        plates = json.loads(selectedPlates)
+
+        if not isinstance(plates, list) or len(plates) == 0:
+            logRequestStatus('split-plates', False, 'selectedPlates must be a non-empty array')
+            return JSONResponse(
+                content={
+                    'success': False,
+                    'error': 'selectedPlates must be a non-empty array'
+                },
+                status_code=400
+            )
+
+        # Import plate splitter
+        from plate_splitter import split_3mf_by_plates
+
+        # Split the file
+        result = split_3mf_by_plates(fileBytes, plates, fileName)
+
+        logRequestStatus('split-plates', True, f'Split {fileName} into {len(plates)} files')
+        return JSONResponse(content=result)
+
+    except json.JSONDecodeError:
+        logRequestStatus('split-plates', False, 'Invalid JSON in selectedPlates parameter')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': 'Invalid JSON in selectedPlates parameter'
+            },
+            status_code=400
+        )
+    except zipfile.BadZipFile:
+        logRequestStatus('split-plates', False, 'Invalid 3MF file (not a valid ZIP archive)')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': 'Invalid 3MF file (not a valid ZIP archive)'
+            },
+            status_code=400
+        )
+    except Exception as e:
+        logRequestStatus('split-plates', False, f'Error: {str(e)}')
         return JSONResponse(
             content={
                 'success': False,
