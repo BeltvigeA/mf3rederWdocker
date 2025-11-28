@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import zipfile
 from typing import Optional, TYPE_CHECKING
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 try:
     from google.cloud import logging as cloudLogging
@@ -100,3 +102,43 @@ async def processFile(gcodeUpload: UploadFile = File(...)):
         **imagesPayload,
         'values': responseValues,
     }
+
+
+@apiApp.post('/list-plates')
+async def list_plates(gcodeUpload: UploadFile = File(...)):
+    """
+    List all plates in a 3MF file with metadata and images
+    """
+    logRequestReceived('list-plates', gcodeUpload.filename)
+    try:
+        # Read file
+        fileBytes = await gcodeUpload.read()
+        fileName = gcodeUpload.filename
+
+        # Import plate scanner module
+        from plate_scanner import scan_plates
+
+        # Scan for plates
+        result = scan_plates(fileBytes, fileName)
+
+        logRequestStatus('list-plates', True, f'Found {result.get("totalPlates", 0)} plates in {fileName}')
+        return JSONResponse(content=result)
+
+    except zipfile.BadZipFile:
+        logRequestStatus('list-plates', False, 'Invalid 3MF file (not a valid ZIP archive)')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': 'Invalid 3MF file (not a valid ZIP archive)'
+            },
+            status_code=400
+        )
+    except Exception as e:
+        logRequestStatus('list-plates', False, f'Error: {str(e)}')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': str(e)
+            },
+            status_code=500
+        )
