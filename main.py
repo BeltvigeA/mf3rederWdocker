@@ -77,32 +77,53 @@ async def testRequest():
 
 @apiApp.post('/process')
 async def processFile(gcodeUpload: UploadFile = File(...)):
-    logRequestReceived('process', gcodeUpload.filename)
+    """Process GCODE/3MF file and extract metadata + images."""
+
+    fileName = gcodeUpload.filename
+    logRequestReceived('process', fileName)
+
+    fileBytes = await gcodeUpload.read()
+
     try:
-        fileBytes = await gcodeUpload.read()
-        try:
-            source = loadInput(fileBytes, gcodeUpload.filename)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Load and parse file (with dynamic plate number detection)
+        source = loadInput(fileBytes, fileName)
         gview = buildGcodeView(source)
+
+        # Log plate number
+        logMessage(f'🔢 Detected plate number: {gview.plateNumber}')
+
+        # Detect slicer and extract values
         guess = detectSlicer(gview)
         parsedValues = extractParsedValues(gview, guess)
+
+        # Extract images (using dynamic plate number)
         imagesPayload = {}
         if gview.containerType == '3mf' and guess.name == 'bambu':
             imagesPayload = enrichBambuAttachments(gview, parsedValues)
+
+        # Normalize response
         responseValues = normalizeToBambuFields(parsedValues, guess)
+
+        logRequestStatus('process', True, f'Successfully processed {fileName} (plate {gview.plateNumber})')
+
+        return {
+            **imagesPayload,
+            'plateNumber': gview.plateNumber,  # Include in response
+            'values': responseValues,
+        }
+
+    except ValueError as exc:
+        logRequestStatus('process', False, f'ValueError: {exc}')
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        logRequestStatus('process', False, f'HTTP 404 - {exc}')
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except HTTPException as exc:
         logRequestStatus('process', False, f"HTTP {exc.status_code} - {exc.detail}")
         raise
     except Exception as exc:
         logRequestStatus('process', False, f'Unexpected error: {exc}')
-        raise
-
-    logRequestStatus('process', True, f'Successfully processed {gcodeUpload.filename}')
-    return {
-        **imagesPayload,
-        'values': responseValues,
-    }
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @apiApp.post('/list-plates')
