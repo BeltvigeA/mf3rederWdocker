@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from typing import Dict, List, Literal, NamedTuple
 
@@ -11,6 +12,7 @@ class GCodeSource(NamedTuple):
     attachments: Dict[str, bytes]
     containerType: Literal['gcode', '3mf']
     fileName: str | None
+    plateNumber: int = 1  # NEW: Default to 1 for backwards compatibility
 
 
 def normalizeText(rawBytes: bytes) -> List[str]:
@@ -19,6 +21,25 @@ def normalizeText(rawBytes: bytes) -> List[str]:
         text = text.lstrip('\ufeff')
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     return text.split('\n')
+
+
+def extractPlateNumber(filepath: str) -> int:
+    """
+    Extract plate number from filepath.
+
+    Examples:
+      - "Metadata/plate_3.gcode" -> 3
+      - "plate_1.gcode" -> 1
+      - "some_file.gcode" -> 1 (default)
+    """
+    pattern = re.compile(r'plate_(\d+)\.gcode', re.IGNORECASE)
+    match = pattern.search(filepath)
+
+    if match:
+        return int(match.group(1))
+
+    # Default to plate 1 if no match
+    return 1
 
 
 def loadInput(fileBytes: bytes, fileName: str | None) -> GCodeSource:
@@ -38,13 +59,26 @@ def loadInput(fileBytes: bytes, fileName: str | None) -> GCodeSource:
 def _loadFrom3mf(fileBytes: bytes, fileName: str | None) -> GCodeSource:
     attachments: Dict[str, bytes] = {}
     gcodeBytes: bytes | None = None
+    plateNumber = 1  # Default
+
     with zipfile.ZipFile(io.BytesIO(fileBytes)) as archive:
+        # Get all GCODE files
         gcodePaths = [name for name in archive.namelist() if name.lower().endswith('.gcode')]
+
+        # Prefer files in metadata/ folder
         preferredPaths = [path for path in gcodePaths if path.lower().startswith('metadata/')]
         targetPath = preferredPaths[0] if preferredPaths else (gcodePaths[0] if gcodePaths else None)
+
         if not targetPath:
             raise ValueError('No G-code found in archive')
+
+        # Extract plate number from GCODE filename
+        plateNumber = extractPlateNumber(targetPath)
+
+        # Read GCODE
         gcodeBytes = archive.read(targetPath)
+
+        # Read all other files into attachments
         for name in archive.namelist():
             if name == targetPath:
                 continue
@@ -52,12 +86,28 @@ def _loadFrom3mf(fileBytes: bytes, fileName: str | None) -> GCodeSource:
                 attachments[name] = archive.read(name)
             except KeyError:
                 continue
+
     lines = normalizeText(gcodeBytes)
     headLines = lines[:500]
-    return GCodeSource(lines=lines, headLines=headLines, attachments=attachments, containerType='3mf', fileName=fileName)
+
+    return GCodeSource(
+        lines=lines,
+        headLines=headLines,
+        attachments=attachments,
+        containerType='3mf',
+        fileName=fileName,
+        plateNumber=plateNumber  # Pass plate number
+    )
 
 
 def _loadFromGcode(fileBytes: bytes, fileName: str | None) -> GCodeSource:
     lines = normalizeText(fileBytes)
     headLines = lines[:500]
-    return GCodeSource(lines=lines, headLines=headLines, attachments={}, containerType='gcode', fileName=fileName)
+    return GCodeSource(
+        lines=lines,
+        headLines=headLines,
+        attachments={},
+        containerType='gcode',
+        fileName=fileName,
+        plateNumber=1  # Default for pure GCODE
+    )

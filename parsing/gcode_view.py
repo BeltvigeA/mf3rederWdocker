@@ -13,6 +13,7 @@ class GCodeView:
     attachments: Dict[str, bytes]
     containerType: Literal['gcode', '3mf']
     fileName: str | None
+    plateNumber: int = 1  # NEW: Add plate number
 
     @property
     def text(self) -> str:
@@ -30,4 +31,5 @@ def buildGcodeView(source: GCodeSource) -> GCodeView:
         attachments=dict(source.attachments),
         containerType=source.containerType,
         fileName=source.fileName,
+        plateNumber=source.plateNumber,  # Pass through plate number
     )
