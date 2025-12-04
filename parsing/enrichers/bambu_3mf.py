@@ -138,16 +138,20 @@ def parseObjects(sliceContent: str) -> List[Dict[str, Any]]:
 
 def enrichBambuAttachments(gview: GCodeView, values: ParsedValues) -> Dict[str, str]:
     attachments = gview.attachments
-    plateImageBytes = attachments.get('Metadata/plate_1.png')
-    pickImageBytes = attachments.get('Metadata/pick_1.png')
-    topImageBytes = attachments.get('Metadata/top_1.png')
+    plateNum = gview.plateNumber
+
+    # Try to find images with the correct plate number
+    plateImageBytes = attachments.get(f'Metadata/plate_{plateNum}.png')
+    pickImageBytes = attachments.get(f'Metadata/pick_{plateNum}.png')
+    topImageBytes = attachments.get(f'Metadata/top_{plateNum}.png')
     sliceConfigBytes = attachments.get('Metadata/slice_info.config')
+
     if plateImageBytes is None:
-        raise HTTPException(status_code=404, detail='plate_1.png not found')
+        raise HTTPException(status_code=404, detail=f'plate_{plateNum}.png not found')
     if pickImageBytes is None:
-        raise HTTPException(status_code=404, detail='pick_1.png not found')
+        raise HTTPException(status_code=404, detail=f'pick_{plateNum}.png not found')
     if topImageBytes is None:
-        raise HTTPException(status_code=404, detail='top_1.png not found')
+        raise HTTPException(status_code=404, detail=f'top_{plateNum}.png not found')
     if sliceConfigBytes is None:
         raise HTTPException(status_code=404, detail='slice_info.config not found')
     rankedRegions = segmentColorRegions(pickImageBytes)

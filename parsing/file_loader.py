@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from typing import Dict, List, Literal, NamedTuple
 
@@ -11,6 +12,25 @@ class GCodeSource(NamedTuple):
     attachments: Dict[str, bytes]
     containerType: Literal['gcode', '3mf']
     fileName: str | None
+    plateNumber: int = 1  # Default to 1 for backwards compatibility
+
+
+def _extractPlateNumber(filepath: str) -> int:
+    """
+    Extract plate number from filepath
+    Examples:
+      - "Metadata/plate_3.gcode" -> 3
+      - "plate_1.gcode" -> 1
+      - "some_file.gcode" -> 1 (default)
+    """
+    pattern = re.compile(r'plate_(\d+)\.gcode', re.IGNORECASE)
+    match = pattern.search(filepath)
+
+    if match:
+        return int(match.group(1))
+
+    # Default to plate 1 if no match
+    return 1
 
 
 def normalizeText(rawBytes: bytes) -> List[str]:
@@ -44,6 +64,10 @@ def _loadFrom3mf(fileBytes: bytes, fileName: str | None) -> GCodeSource:
         targetPath = preferredPaths[0] if preferredPaths else (gcodePaths[0] if gcodePaths else None)
         if not targetPath:
             raise ValueError('No G-code found in archive')
+
+        # Extract plate number from the selected gcode file
+        plateNumber = _extractPlateNumber(targetPath)
+
         gcodeBytes = archive.read(targetPath)
         for name in archive.namelist():
             if name == targetPath:
@@ -54,7 +78,14 @@ def _loadFrom3mf(fileBytes: bytes, fileName: str | None) -> GCodeSource:
                 continue
     lines = normalizeText(gcodeBytes)
     headLines = lines[:500]
-    return GCodeSource(lines=lines, headLines=headLines, attachments=attachments, containerType='3mf', fileName=fileName)
+    return GCodeSource(
+        lines=lines,
+        headLines=headLines,
+        attachments=attachments,
+        containerType='3mf',
+        fileName=fileName,
+        plateNumber=plateNumber
+    )
 
 
 def _loadFromGcode(fileBytes: bytes, fileName: str | None) -> GCodeSource:
