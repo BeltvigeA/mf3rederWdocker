@@ -62,15 +62,22 @@ def _loadFrom3mf(fileBytes: bytes, fileName: str | None) -> GCodeSource:
     plateNumber = 1  # Default
 
     with zipfile.ZipFile(io.BytesIO(fileBytes)) as archive:
+        # Get all files in archive
+        all_files = archive.namelist()
+
         # Get all GCODE files
-        gcodePaths = [name for name in archive.namelist() if name.lower().endswith('.gcode')]
+        gcodePaths = [name for name in all_files if name.lower().endswith('.gcode')]
 
         # Prefer files in metadata/ folder
         preferredPaths = [path for path in gcodePaths if path.lower().startswith('metadata/')]
         targetPath = preferredPaths[0] if preferredPaths else (gcodePaths[0] if gcodePaths else None)
 
         if not targetPath:
-            raise ValueError('No G-code found in archive')
+            # Improved error message with file list
+            sample_files = ', '.join(all_files[:5]) if all_files else 'no files'
+            raise ValueError(
+                f'No G-code found in archive. Found {len(all_files)} files: {sample_files}...'
+            )
 
         # Extract plate number from GCODE filename
         plateNumber = extractPlateNumber(targetPath)
