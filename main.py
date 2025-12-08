@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import logging
 import zipfile
@@ -113,8 +114,36 @@ async def processFile(gcodeUpload: UploadFile = File(...)):
         }
 
     except ValueError as exc:
-        logRequestStatus('process', False, f'ValueError: {exc}')
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        error_msg = str(exc)
+
+        # Check if it's a "No G-code found" error
+        if 'No G-code found' in error_msg or 'No GCODE' in error_msg:
+            logMessage(f'❌ No GCODE found in {fileName}')
+
+            # Try to list files in archive for debugging
+            files_in_archive = []
+            try:
+                with zipfile.ZipFile(io.BytesIO(fileBytes)) as archive:
+                    files_in_archive = archive.namelist()
+                    logMessage(f'📂 Files in archive: {files_in_archive[:10]}')
+            except Exception as zip_error:
+                logMessage(f'⚠️ Could not read archive: {zip_error}')
+
+            return JSONResponse(
+                content={
+                    'success': False,
+                    'error': 'No GCODE file found in 3MF archive',
+                    'details': 'The uploaded 3MF file does not contain a GCODE file. Please ensure your 3MF file includes sliced GCODE data (usually in Metadata/plate_X.gcode).',
+                    'fileName': fileName,
+                    'filesFound': files_in_archive[:20] if files_in_archive else []
+                },
+                status_code=400
+            )
+
+        # Other ValueError - log and return as 400
+        logRequestStatus('process', False, f'ValueError: {error_msg}')
+        raise HTTPException(status_code=400, detail=error_msg) from exc
+
     except FileNotFoundError as exc:
         logRequestStatus('process', False, f'HTTP 404 - {exc}')
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -131,12 +160,12 @@ async def list_plates(gcodeUpload: UploadFile = File(...)):
     """
     List all plates in a 3MF file with metadata and images
     """
-    logRequestReceived('list-plates', gcodeUpload.filename)
-    try:
-        # Read file
-        fileBytes = await gcodeUpload.read()
-        fileName = gcodeUpload.filename
+    fileName = gcodeUpload.filename
+    logRequestReceived('list-plates', fileName)
 
+    fileBytes = await gcodeUpload.read()
+
+    try:
         # Import plate scanner module
         from plate_scanner import scan_plates
 
@@ -145,6 +174,45 @@ async def list_plates(gcodeUpload: UploadFile = File(...)):
 
         logRequestStatus('list-plates', True, f'Found {result.get("totalPlates", 0)} plates in {fileName}')
         return JSONResponse(content=result)
+
+    except ValueError as exc:
+        error_msg = str(exc)
+
+        # Check if it's a "No G-code found" error
+        if 'No G-code found' in error_msg or 'No GCODE' in error_msg:
+            logMessage(f'❌ No GCODE found in {fileName}')
+
+            # List files in archive
+            files_in_archive = []
+            try:
+                with zipfile.ZipFile(io.BytesIO(fileBytes)) as archive:
+                    files_in_archive = archive.namelist()
+                    logMessage(f'📂 Files in archive: {files_in_archive[:10]}')
+            except Exception as zip_error:
+                logMessage(f'⚠️ Could not read archive: {zip_error}')
+
+            return JSONResponse(
+                content={
+                    'success': False,
+                    'error': 'No GCODE file found in 3MF archive',
+                    'details': 'This 3MF file appears to be a 3D model file without sliced GCODE. Please slice the file in your slicer software (e.g., Bambu Studio, PrusaSlicer) before uploading.',
+                    'fileName': fileName,
+                    'filesFound': files_in_archive[:20] if files_in_archive else [],
+                    'totalPlates': 0,
+                    'plates': []
+                },
+                status_code=400
+            )
+
+        # Other ValueError
+        logRequestStatus('list-plates', False, f'ValueError: {error_msg}')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': error_msg
+            },
+            status_code=400
+        )
 
     except zipfile.BadZipFile:
         logRequestStatus('list-plates', False, 'Invalid 3MF file (not a valid ZIP archive)')
@@ -177,10 +245,10 @@ async def split_plates(
     """
     fileName = originalFilename or gcodeUpload.filename
     logRequestReceived('split-plates', f'{fileName} - plates: {selectedPlates}')
-    try:
-        # Read file
-        fileBytes = await gcodeUpload.read()
 
+    fileBytes = await gcodeUpload.read()
+
+    try:
         # Parse selected plates
         plates = json.loads(selectedPlates)
 
@@ -202,6 +270,43 @@ async def split_plates(
 
         logRequestStatus('split-plates', True, f'Split {fileName} into {len(plates)} files')
         return JSONResponse(content=result)
+
+    except ValueError as exc:
+        error_msg = str(exc)
+
+        # Check if it's a "No G-code found" error
+        if 'No G-code found' in error_msg or 'No GCODE' in error_msg:
+            logMessage(f'❌ No GCODE found in {fileName}')
+
+            # List files in archive
+            files_in_archive = []
+            try:
+                with zipfile.ZipFile(io.BytesIO(fileBytes)) as archive:
+                    files_in_archive = archive.namelist()
+                    logMessage(f'📂 Files in archive: {files_in_archive[:10]}')
+            except Exception as zip_error:
+                logMessage(f'⚠️ Could not read archive: {zip_error}')
+
+            return JSONResponse(
+                content={
+                    'success': False,
+                    'error': 'No GCODE file found in 3MF archive',
+                    'details': 'Cannot split file: This 3MF file does not contain any GCODE data. Please slice the file first.',
+                    'fileName': fileName,
+                    'filesFound': files_in_archive[:20] if files_in_archive else []
+                },
+                status_code=400
+            )
+
+        # Other ValueError
+        logRequestStatus('split-plates', False, f'ValueError: {error_msg}')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': error_msg
+            },
+            status_code=400
+        )
 
     except json.JSONDecodeError:
         logRequestStatus('split-plates', False, 'Invalid JSON in selectedPlates parameter')
