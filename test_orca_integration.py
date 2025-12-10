@@ -28,9 +28,10 @@ ORCA_SAMPLE = """
 ; enable_support = 0
 ; CONFIG_BLOCK_END
 
-; total filament length [mm] : 2500.5,1800.3
-; total filament volume [cm^3] : 6.2,4.5
-; total filament weight [g] : 7.7,5.6
+; filament used [mm] = 51212.00, 4221.24
+; filament used [cm3] = 123.18, 10.15
+; filament used [g] = 152.74, 12.59
+; filament cost = 3.05, 0.25
 
 G28 ; home
 """
@@ -89,7 +90,8 @@ def test_orca_extraction():
     assert parsed.fieldValues.get('printTimeSec') == '21280', f"Wrong print time: {parsed.fieldValues.get('printTimeSec')}"
     assert parsed.fieldValues.get('totalLayers') == '140', f"Wrong layer count: {parsed.fieldValues.get('totalLayers')}"
     assert parsed.fieldValues.get('maxZHeight') == '28.00', f"Wrong Z height: {parsed.fieldValues.get('maxZHeight')}"
-    assert parsed.fieldValues.get('filamentUsedGrams') == '13.3', f"Wrong filament weight: {parsed.fieldValues.get('filamentUsedGrams')}"
+    assert parsed.fieldValues.get('filamentUsedGrams') == '165.33', f"Wrong filament weight: {parsed.fieldValues.get('filamentUsedGrams')}"
+    assert parsed.fieldValues.get('filamentCost') == '3.30', f"Wrong filament cost: {parsed.fieldValues.get('filamentCost')}"
 
     print("✓ Extraction test passed\n")
 
