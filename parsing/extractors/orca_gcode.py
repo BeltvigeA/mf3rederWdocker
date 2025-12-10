@@ -47,23 +47,45 @@ class OrcaGcodeExtractor:
         if heightMatch:
             values['maxZHeight'] = heightMatch.group(1)
 
-        # === Try Bambu-compatible fields (since Orca is a fork) ===
-        # Check for filament weight in Bambu format
+        # === Try PrusaSlicer-style format first (Orca uses this at the end of file) ===
+        # ; filament used [mm] = 51212.00, 4221.24
+        # ; filament used [cm3] = 123.18, 10.15
+        # ; filament used [g] = 152.74, 12.59
         weightMatch = re.search(
-            r';\s*total filament weight \[g\]\s*[=:]\s*([0-9.,]+)',
+            r';\s*filament used \[g\]\s*=\s*([0-9., ]+)',
             gcodeText,
             re.IGNORECASE
         )
         lengthMatch = re.search(
-            r';\s*total filament length \[mm\]\s*[=:]\s*([0-9.,]+)',
+            r';\s*filament used \[mm\]\s*=\s*([0-9., ]+)',
             gcodeText,
             re.IGNORECASE
         )
         volumeMatch = re.search(
-            r';\s*total filament volume \[cm\^3\]\s*[=:]\s*([0-9.,]+)',
+            r';\s*filament used \[cm3\]\s*=\s*([0-9., ]+)',
             gcodeText,
             re.IGNORECASE
         )
+
+        # If not found, try Bambu-compatible format
+        if not weightMatch:
+            weightMatch = re.search(
+                r';\s*total filament weight \[g\]\s*[=:]\s*([0-9.,]+)',
+                gcodeText,
+                re.IGNORECASE
+            )
+        if not lengthMatch:
+            lengthMatch = re.search(
+                r';\s*total filament length \[mm\]\s*[=:]\s*([0-9.,]+)',
+                gcodeText,
+                re.IGNORECASE
+            )
+        if not volumeMatch:
+            volumeMatch = re.search(
+                r';\s*total filament volume \[cm\^3\]\s*[=:]\s*([0-9.,]+)',
+                gcodeText,
+                re.IGNORECASE
+            )
 
         weights = []
         if weightMatch:
@@ -120,6 +142,19 @@ class OrcaGcodeExtractor:
                     values['filamentUsedGrams'] = f"{sum(weights):.2f}"
 
         values['filamentAnalysis'] = analysis
+
+        # === Parse filament cost ===
+        # ; filament cost = 3.05, 0.25
+        costMatch = re.search(
+            r';\s*filament cost\s*=\s*([0-9., ]+)',
+            gcodeText,
+            re.IGNORECASE
+        )
+        if costMatch:
+            costs = [float(piece.strip()) for piece in costMatch.group(1).split(',') if piece.strip()]
+            if costs:
+                values['filamentCost'] = f"{sum(costs):.2f}"
+                values['filamentCosts'] = costs
 
         # === Parse config block values ===
         # Look for config values that might be useful
