@@ -45,7 +45,7 @@ def normalizeToBambuFields(parsedValues: ParsedValues, slicerGuess: SlicerGuess)
     weightEntries: List[str] = []
     if isinstance(filamentWeights, list):
         for item in filamentWeights:
-            if item is not None:
+            if item is not None and item > 0.01:  # Filter out unused filaments (< 0.01g)
                 weightEntries.append(_formatNumber(item))
     filamentUsed = parsedValues.fieldValues.get('filamentUsedGrams')
     if not weightEntries and filamentUsed is not None:
@@ -59,6 +59,11 @@ def normalizeToBambuFields(parsedValues: ParsedValues, slicerGuess: SlicerGuess)
     if isinstance(filamentAnalysis, list):
         for spool in filamentAnalysis:
             if isinstance(spool, dict):
+                # Only include filaments with weight > 0.01g
+                weightValue = spool.get('weightG')
+                if weightValue is None or weightValue <= 0.01:
+                    continue
+
                 lengthValue = spool.get('lengthMm')
                 if lengthValue is not None:
                     lengthEntries.append(_formatNumber(lengthValue))

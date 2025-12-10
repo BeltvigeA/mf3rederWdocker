@@ -89,37 +89,47 @@ class OrcaGcodeExtractor:
 
         weights = []
         if weightMatch:
-            weights = [float(piece) for piece in weightMatch.group(1).split(',') if piece]
+            # Parse all weights, but filter out unused filaments (< 0.01g)
+            all_weights = [float(piece.strip()) for piece in weightMatch.group(1).split(',') if piece.strip()]
+            weights = [w for w in all_weights if w > 0.01]
             values['filamentWeights'] = weights
-            values['filamentUsedGrams'] = str(sum(weights))
+            values['filamentUsedGrams'] = str(sum(weights)) if weights else '0'
 
         # Build filament analysis
         analysis: List[Dict[str, Any]] = []
-        if weights:
-            lengths = [float(piece) for piece in lengthMatch.group(1).split(',')] if lengthMatch else []
-            volumes = [float(piece) for piece in volumeMatch.group(1).split(',')] if volumeMatch else []
+        if weightMatch:
+            # Parse ALL values to get correct indices
+            all_weights = [float(piece.strip()) for piece in weightMatch.group(1).split(',') if piece.strip()]
+            all_lengths = [float(piece.strip()) for piece in lengthMatch.group(1).split(',') if piece.strip()] if lengthMatch else []
+            all_volumes = [float(piece.strip()) for piece in volumeMatch.group(1).split(',') if piece.strip()] if volumeMatch else []
 
-            for index, weight in enumerate(weights):
-                item = {
-                    'lengthMm': lengths[index] if index < len(lengths) else None,
-                    'volumeCm3': volumes[index] if index < len(volumes) else None,
-                    'weightG': weight,
-                }
-                analysis.append(item)
+            # Only include filaments with weight > 0.01g
+            for index, weight in enumerate(all_weights):
+                if weight > 0.01:
+                    item = {
+                        'lengthMm': all_lengths[index] if index < len(all_lengths) else None,
+                        'volumeCm3': all_volumes[index] if index < len(all_volumes) else None,
+                        'weightG': weight,
+                    }
+                    analysis.append(item)
         elif lengthMatch:
             # If no weight but we have length, try to calculate weight
-            lengths = [float(piece) for piece in lengthMatch.group(1).split(',') if piece]
-            volumes = [float(piece) for piece in volumeMatch.group(1).split(',')] if volumeMatch else []
+            all_lengths = [float(piece.strip()) for piece in lengthMatch.group(1).split(',') if piece.strip()]
+            all_volumes = [float(piece.strip()) for piece in volumeMatch.group(1).split(',') if piece.strip()] if volumeMatch else []
 
             # Extract density and diameter from config block
             densityMatch = re.search(r';\s*filament_density[=:]\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
             diameterMatch = re.search(r';\s*filament_diameter[=:]\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
 
             if densityMatch and diameterMatch:
-                densities = [float(d) for d in densityMatch.group(1).split(',') if d]
-                diameters = [float(d) for d in diameterMatch.group(1).split(',') if d]
+                densities = [float(d.strip()) for d in densityMatch.group(1).split(',') if d.strip()]
+                diameters = [float(d.strip()) for d in diameterMatch.group(1).split(',') if d.strip()]
 
-                for index, length in enumerate(lengths):
+                for index, length in enumerate(all_lengths):
+                    # Skip if length is negligible (< 10mm)
+                    if length < 10:
+                        continue
+
                     density = densities[index] if index < len(densities) else densities[0] if densities else 1.24
                     diameter = diameters[index] if index < len(diameters) else diameters[0] if diameters else 1.75
 
@@ -129,13 +139,15 @@ class OrcaGcodeExtractor:
                     volumeCm3 = volumeMm3 / 1000
                     weight = volumeCm3 * density
 
-                    weights.append(weight)
-                    item = {
-                        'lengthMm': length,
-                        'volumeCm3': volumes[index] if index < len(volumes) else volumeCm3,
-                        'weightG': weight,
-                    }
-                    analysis.append(item)
+                    # Only include if weight > 0.01g
+                    if weight > 0.01:
+                        weights.append(weight)
+                        item = {
+                            'lengthMm': length,
+                            'volumeCm3': all_volumes[index] if index < len(all_volumes) else volumeCm3,
+                            'weightG': weight,
+                        }
+                        analysis.append(item)
 
                 if weights:
                     values['filamentWeights'] = weights
