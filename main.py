@@ -99,7 +99,7 @@ async def processFile(gcodeUpload: UploadFile = File(...)):
 
         # Extract images (using dynamic plate number)
         imagesPayload = {}
-        if gview.containerType == '3mf' and guess.name == 'bambu':
+        if gview.containerType == '3mf' and guess.name in ('bambu', 'orca'):
             imagesPayload = enrichBambuAttachments(gview, parsedValues)
 
         # Normalize response

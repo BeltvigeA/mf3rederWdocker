@@ -44,20 +44,27 @@ class BambuGcodeExtractor:
         volumeMatch = re.search(r'total filament volume \[cm\^3\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
         weights = []
         if weightMatch:
-            weights = [float(piece) for piece in weightMatch.group(1).split(',') if piece]
+            # Parse all weights, but filter out unused filaments (< 0.01g)
+            all_weights = [float(piece.strip()) for piece in weightMatch.group(1).split(',') if piece.strip()]
+            weights = [w for w in all_weights if w > 0.01]
             values['filamentWeights'] = weights
-            values['filamentUsedGrams'] = str(sum(weights))
+            values['filamentUsedGrams'] = str(sum(weights)) if weights else '0'
         analysis: List[Dict[str, Any]] = []
-        if weights:
-            lengths = [float(piece) for piece in lengthMatch.group(1).split(',')] if lengthMatch else []
-            volumes = [float(piece) for piece in volumeMatch.group(1).split(',')] if volumeMatch else []
-            for index, weight in enumerate(weights):
-                item = {
-                    'lengthMm': lengths[index] if index < len(lengths) else None,
-                    'volumeCm3': volumes[index] if index < len(volumes) else None,
-                    'weightG': weight,
-                }
-                analysis.append(item)
+        if weightMatch:
+            # Parse ALL values to get correct indices
+            all_weights = [float(piece.strip()) for piece in weightMatch.group(1).split(',') if piece.strip()]
+            all_lengths = [float(piece.strip()) for piece in lengthMatch.group(1).split(',') if piece.strip()] if lengthMatch else []
+            all_volumes = [float(piece.strip()) for piece in volumeMatch.group(1).split(',') if piece.strip()] if volumeMatch else []
+
+            # Only include filaments with weight > 0.01g
+            for index, weight in enumerate(all_weights):
+                if weight > 0.01:
+                    item = {
+                        'lengthMm': all_lengths[index] if index < len(all_lengths) else None,
+                        'volumeCm3': all_volumes[index] if index < len(all_volumes) else None,
+                        'weightG': weight,
+                    }
+                    analysis.append(item)
         values['filamentAnalysis'] = analysis
         changes = re.findall(r'M620\s+S\d+A', gcodeText)
         values['filamentChanges'] = str(len(changes))
