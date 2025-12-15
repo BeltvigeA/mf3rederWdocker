@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover - optional dependency during local dev
 if TYPE_CHECKING:
     from google.cloud.logging_v2.logger import Logger as CloudLogger
 
-from parsing.enrichers.bambu_3mf import enrichBambuAttachments
+from parsing.enrichers.bambu_3mf import enrichBambuAttachments, extractObjectsFromPlateJson
 from parsing.file_loader import loadInput
 from parsing.gcode_view import buildGcodeView
 from parsing.router import extractParsedValues
@@ -101,6 +101,15 @@ async def processFile(gcodeUpload: UploadFile = File(...)):
         imagesPayload = {}
         if gview.containerType == '3mf' and guess.name in ('bambu', 'orca'):
             imagesPayload = enrichBambuAttachments(gview, parsedValues)
+
+        # Extract objects from plate_X.json (for 3MF files)
+        objectsPayload = {}
+        if gview.containerType == '3mf':
+            objectsPayload = extractObjectsFromPlateJson(gview)
+            # Update parsedValues with objects data if found
+            if objectsPayload.get('objects'):
+                parsedValues.fieldValues['objects'] = objectsPayload['objects']
+                parsedValues.fieldValues['objectsOnPlate'] = str(objectsPayload['objectsOnPlate'])
 
         # Normalize response
         responseValues = normalizeToBambuFields(parsedValues, guess)
