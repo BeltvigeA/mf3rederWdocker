@@ -344,3 +344,93 @@ async def split_plates(
             },
             status_code=500
         )
+
+
+@apiApp.post('/analyze-plate')
+async def analyze_plate(plateImage: UploadFile = File(...)):
+    """
+    Analyze a 3D print build plate image for potential interference objects.
+    
+    Takes an image of the build plate and uses AI (Gemini Vision) to detect if there are
+    any objects that could interfere with the next print.
+    
+    Returns:
+        JSON with analysis results including:
+        - hasInterference: bool
+        - confidenceScore: float
+        - summary: str
+        - detectedObjects: list
+        - recommendation: str
+    """
+    fileName = plateImage.filename
+    logRequestReceived('analyze-plate', fileName)
+    
+    # Validate file type
+    allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+    content_type = plateImage.content_type or ''
+    
+    if content_type not in allowed_types:
+        logRequestStatus('analyze-plate', False, f'Invalid content type: {content_type}')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': f'Invalid file type: {content_type}. Allowed types: PNG, JPEG, WebP'
+            },
+            status_code=400
+        )
+    
+    imageBytes = await plateImage.read()
+    
+    # Validate file is not empty
+    if len(imageBytes) == 0:
+        logRequestStatus('analyze-plate', False, 'Empty file uploaded')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': 'Empty file uploaded'
+            },
+            status_code=400
+        )
+    
+    try:
+        from plate_analysis import analyze_plate_image, to_dict
+        
+        # Map content type to format
+        format_map = {
+            'image/png': 'png',
+            'image/jpeg': 'jpeg',
+            'image/jpg': 'jpeg',
+            'image/webp': 'webp'
+        }
+        image_format = format_map.get(content_type, 'png')
+        
+        result = analyze_plate_image(imageBytes, image_format)
+        
+        logRequestStatus('analyze-plate', True, 
+                        f'Analyzed {fileName}: interference={result.hasInterference}, '
+                        f'confidence={result.confidenceScore:.2f}')
+        
+        return JSONResponse(content={
+            'success': True,
+            **to_dict(result)
+        })
+        
+    except ValueError as exc:
+        logRequestStatus('analyze-plate', False, f'ValueError: {exc}')
+        return JSONResponse(
+            content={'success': False, 'error': str(exc)},
+            status_code=400
+        )
+    except RuntimeError as exc:
+        logRequestStatus('analyze-plate', False, f'RuntimeError: {exc}')
+        return JSONResponse(
+            content={'success': False, 'error': str(exc)},
+            status_code=500
+        )
+    except Exception as exc:
+        logRequestStatus('analyze-plate', False, f'Unexpected error: {exc}')
+        return JSONResponse(
+            content={'success': False, 'error': f'Unexpected error: {exc}'},
+            status_code=500
+        )
+
