@@ -117,7 +117,7 @@ Hvis du ikke kan se platen klart, sett confidenceScore lavt og forklar i summary
         
         # Send to Gemini using the new SDK
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash-exp",
             contents=[prompt, image_part]
         )
         
