@@ -78,30 +78,33 @@ def analyze_plate_image(image_bytes: bytes, image_format: str = "png") -> PlateA
     client = genai.Client(api_key=api_key)
     
     # Prepare the analysis prompt
-    prompt = """Du er en ekspert paa 3D-printing. Analyser dette bildet av en 3D-print byggeplate.
+    prompt = """You are an expert on 3D printing. Analyze this image of a 3D print build plate.
 
-Oppgave:
-1. Identifiser om det er noen 3D-printede objekter paa platen som kan forstyrre neste print.
-2. Beskriv kort hva du ser paa platen.
-3. Vurder risikoen for at eksisterende objekter vil paavirke neste print.
+Task:
+1. Identify if there are any 3D printed objects in the CENTER of the plate that could interfere with the next print.
+2. IGNORE objects at the very edges of the plate - these are adhesion helpers or purge lines and will NOT interfere with printing.
+3. Only objects in the central print area should be considered as potential interference.
 
-VIKTIG: Svar KUN med gyldig JSON i folgende format (ingen ekstra tekst):
+IMPORTANT: Respond ONLY with valid JSON in the following format (no extra text):
 {
-    "hasInterference": true eller false,
-    "confidenceScore": tall mellom 0.0 og 1.0,
-    "summary": "Kort beskrivelse av platen",
+    "hasInterference": true or false,
+    "confidenceScore": number between 0.0 and 1.0,
+    "summary": "Brief description of the plate and print area",
     "detectedObjects": [
         {
-            "description": "Beskrivelse av objekt",
-            "location": "center eller left eller right eller front eller back",
-            "riskLevel": "low eller medium eller high"
+            "description": "Description of object",
+            "location": "center or left or right or front or back",
+            "riskLevel": "low or medium or high"
         }
     ],
-    "recommendation": "Anbefaling for brukeren"
+    "recommendation": "Recommendation for the user"
 }
 
-Hvis platen er tom eller ren, sett hasInterference til false og detectedObjects til tom liste [].
-Hvis du ikke kan se platen klart, sett confidenceScore lavt og forklar i summary."""
+Rules:
+- Set hasInterference to FALSE if the plate only has small objects at the very edges
+- Set hasInterference to TRUE only if there are objects in the center of the plate
+- Adhesion helpers, purge lines, and other small edge helpers should be IGNORED
+- Only consider objects in the central print area as interference"""
 
     try:
         # Encode image as base64 for the API
