@@ -366,10 +366,31 @@ async def analyze_plate(plateImage: UploadFile = File(...)):
     logRequestReceived('analyze-plate', fileName)
     
     # Validate file type
-    allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+    allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/octet-stream']
     content_type = plateImage.content_type or ''
     
-    if content_type not in allowed_types:
+    # If content type is octet-stream, try to determine from filename
+    if content_type == 'application/octet-stream' and fileName:
+        file_ext = fileName.lower().split('.')[-1]
+        if file_ext == 'png':
+            content_type = 'image/png'
+        elif file_ext in ['jpg', 'jpeg']:
+            content_type = 'image/jpeg'
+        elif file_ext == 'webp':
+            content_type = 'image/webp'
+        else:
+            logRequestStatus('analyze-plate', False, f'Unknown file extension: {file_ext}')
+            return JSONResponse(
+                content={
+                    'success': False,
+                    'error': f'Unknown file extension: {file_ext}. Allowed: .png, .jpg, .jpeg, .webp'
+                },
+                status_code=400
+            )
+    
+    # Validate content type
+    valid_image_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+    if content_type not in valid_image_types:
         logRequestStatus('analyze-plate', False, f'Invalid content type: {content_type}')
         return JSONResponse(
             content={
