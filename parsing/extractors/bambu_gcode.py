@@ -35,10 +35,26 @@ class BambuGcodeExtractor:
         if objectsMatch:
             ids = [segment for segment in objectsMatch.group(1).split(',') if segment.strip()]
             values['objectsOnPlate'] = str(len(ids))
-        timeMatch = re.search(r'model printing time:\s*(\d+)h\s*(\d+)m\s*(\d+)s', gcodeText, re.IGNORECASE)
+        # Try to parse print time - handles formats like "2h 30m 45s", "2m 24s", or "45s"
+        printTimeSec = 0
+        timeMatch = re.search(r'model printing time:\s*((?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?)', gcodeText, re.IGNORECASE)
         if timeMatch:
-            hours, minutes, seconds = map(int, timeMatch.groups())
-            values['printTimeSec'] = str(hours * 3600 + minutes * 60 + seconds)
+            hours = int(timeMatch.group(2)) if timeMatch.group(2) else 0
+            minutes = int(timeMatch.group(3)) if timeMatch.group(3) else 0
+            seconds = int(timeMatch.group(4)) if timeMatch.group(4) else 0
+            printTimeSec = hours * 3600 + minutes * 60 + seconds
+
+        # Fallback to total estimated time if print time is 0 or not found
+        if printTimeSec == 0:
+            totalTimeMatch = re.search(r'total estimated time:\s*((?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?)', gcodeText, re.IGNORECASE)
+            if totalTimeMatch:
+                hours = int(totalTimeMatch.group(2)) if totalTimeMatch.group(2) else 0
+                minutes = int(totalTimeMatch.group(3)) if totalTimeMatch.group(3) else 0
+                seconds = int(totalTimeMatch.group(4)) if totalTimeMatch.group(4) else 0
+                printTimeSec = hours * 3600 + minutes * 60 + seconds
+
+        if printTimeSec > 0:
+            values['printTimeSec'] = str(printTimeSec)
         weightMatch = re.search(r'total filament weight \[g\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
         lengthMatch = re.search(r'total filament length \[mm\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
         volumeMatch = re.search(r'total filament volume \[cm\^3\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
