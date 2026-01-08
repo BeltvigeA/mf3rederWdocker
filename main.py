@@ -6,9 +6,12 @@ import logging
 import zipfile
 from typing import Optional, TYPE_CHECKING
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 try:
     from google.cloud import logging as cloudLogging
@@ -58,7 +61,12 @@ if not fallbackLogger.handlers:
 
 requestLogger = buildCloudLogger()
 
+# Rate limiter configuration
+limiter = Limiter(key_func=get_remote_address)
+
 apiApp = FastAPI()
+apiApp.state.limiter = limiter
+apiApp.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 apiApp.add_middleware(
     CORSMiddleware,
@@ -70,14 +78,16 @@ apiApp.add_middleware(
 
 
 @apiApp.get('/testRequest')
-async def testRequest():
+@limiter.limit("60/minute")
+async def testRequest(request: Request):
     logRequestReceived('testRequest')
     logRequestStatus('testRequest', True, 'Health check response delivered')
     return {'status': 'ok'}
 
 
 @apiApp.post('/process')
-async def processFile(gcodeUpload: UploadFile = File(...)):
+@limiter.limit("30/minute")
+async def processFile(request: Request, gcodeUpload: UploadFile = File(...)):
     """Process GCODE/3MF file and extract metadata + images."""
 
     fileName = gcodeUpload.filename
@@ -165,7 +175,8 @@ async def processFile(gcodeUpload: UploadFile = File(...)):
 
 
 @apiApp.post('/list-plates')
-async def list_plates(gcodeUpload: UploadFile = File(...)):
+@limiter.limit("30/minute")
+async def list_plates(request: Request, gcodeUpload: UploadFile = File(...)):
     """
     List all plates in a 3MF file with metadata and images
     """
@@ -244,7 +255,9 @@ async def list_plates(gcodeUpload: UploadFile = File(...)):
 
 
 @apiApp.post('/split-plates')
+@limiter.limit("20/minute")
 async def split_plates(
+    request: Request,
     gcodeUpload: UploadFile = File(...),
     selectedPlates: str = Form(...),
     originalFilename: str = Form(None)
@@ -347,13 +360,14 @@ async def split_plates(
 
 
 @apiApp.post('/analyze-plate')
-async def analyze_plate(plateImage: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def analyze_plate(request: Request, plateImage: UploadFile = File(...)):
     """
     Analyze a 3D print build plate image for potential interference objects.
-    
+
     Takes an image of the build plate and uses AI (Gemini Vision) to detect if there are
     any objects that could interfere with the next print.
-    
+
     Returns:
         JSON with analysis results including:
         - hasInterference: bool
