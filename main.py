@@ -469,3 +469,115 @@ async def analyze_plate(request: Request, plateImage: UploadFile = File(...)):
             status_code=500
         )
 
+
+@apiApp.post('/check-print-completion')
+async def check_print_completion(printImage: UploadFile = File(...)):
+    """
+    Analyze an image to determine if a 3D print job is complete.
+
+    Takes an image of a 3D print (from a camera or photo) and uses AI (Gemini Vision)
+    to analyze whether the print appears complete, in progress, or failed.
+
+    Returns:
+        JSON with analysis results including:
+        - isComplete: bool
+        - confidenceScore: float
+        - printStatus: str ("complete", "in_progress", "failed", "unknown")
+        - summary: str
+        - detectedIssues: list
+        - recommendation: str
+        - estimatedProgress: int (0-100) if in progress
+    """
+    fileName = printImage.filename
+    logRequestReceived('check-print-completion', fileName)
+
+    # Validate file type
+    allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/octet-stream']
+    content_type = printImage.content_type or ''
+
+    # If content type is octet-stream, try to determine from filename
+    if content_type == 'application/octet-stream' and fileName:
+        file_ext = fileName.lower().split('.')[-1]
+        if file_ext == 'png':
+            content_type = 'image/png'
+        elif file_ext in ['jpg', 'jpeg']:
+            content_type = 'image/jpeg'
+        elif file_ext == 'webp':
+            content_type = 'image/webp'
+        else:
+            logRequestStatus('check-print-completion', False, f'Unknown file extension: {file_ext}')
+            return JSONResponse(
+                content={
+                    'success': False,
+                    'error': f'Unknown file extension: {file_ext}. Allowed: .png, .jpg, .jpeg, .webp'
+                },
+                status_code=400
+            )
+
+    # Validate content type
+    valid_image_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+    if content_type not in valid_image_types:
+        logRequestStatus('check-print-completion', False, f'Invalid content type: {content_type}')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': f'Invalid file type: {content_type}. Allowed types: PNG, JPEG, WebP'
+            },
+            status_code=400
+        )
+
+    imageBytes = await printImage.read()
+
+    # Validate file is not empty
+    if len(imageBytes) == 0:
+        logRequestStatus('check-print-completion', False, 'Empty file uploaded')
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': 'Empty file uploaded'
+            },
+            status_code=400
+        )
+
+    try:
+        from print_completion_analysis import analyze_print_completion, to_dict
+
+        # Map content type to format
+        format_map = {
+            'image/png': 'png',
+            'image/jpeg': 'jpeg',
+            'image/jpg': 'jpeg',
+            'image/webp': 'webp'
+        }
+        image_format = format_map.get(content_type, 'png')
+
+        result = analyze_print_completion(imageBytes, image_format)
+
+        logRequestStatus('check-print-completion', True,
+                        f'Analyzed {fileName}: complete={result.isComplete}, '
+                        f'status={result.printStatus}, confidence={result.confidenceScore:.2f}')
+
+        return JSONResponse(content={
+            'success': True,
+            **to_dict(result)
+        })
+
+    except ValueError as exc:
+        logRequestStatus('check-print-completion', False, f'ValueError: {exc}')
+        return JSONResponse(
+            content={'success': False, 'error': str(exc)},
+            status_code=400
+        )
+    except RuntimeError as exc:
+        logRequestStatus('check-print-completion', False, f'RuntimeError: {exc}')
+        return JSONResponse(
+            content={'success': False, 'error': str(exc)},
+            status_code=500
+        )
+    except Exception as exc:
+        logRequestStatus('check-print-completion', False, f'Unexpected error: {exc}')
+        return JSONResponse(
+            content={'success': False, 'error': f'Unexpected error: {exc}'},
+            status_code=500
+        )
+
