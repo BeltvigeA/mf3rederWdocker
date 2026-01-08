@@ -471,7 +471,8 @@ async def analyze_plate(request: Request, plateImage: UploadFile = File(...)):
 
 
 @apiApp.post('/check-print-completion')
-async def check_print_completion(printImage: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def check_print_completion(request: Request, printImage: UploadFile = File(...)):
     """
     Analyze an image to determine if a 3D print job is complete.
 
