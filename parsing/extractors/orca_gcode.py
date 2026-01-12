@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import base64
 import math
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
-from .base import ParsedValues
+from .base import ParsedValues, parseDurationToSeconds
 from ..gcode_view import GCodeView
 
 
@@ -31,10 +32,29 @@ class OrcaGcodeExtractor:
             hours, minutes, seconds = map(int, timeMatch.groups())
             values['printTimeSec'] = str(hours * 3600 + minutes * 60 + seconds)
 
+        # Fallback: PrusaSlicer/Klipper style format
+        # ; estimated printing time (normal mode) = 43m 45s
+        if 'printTimeSec' not in values:
+            estTimeMatch = re.search(
+                r';\s*estimated printing time.*?=\s*([\dhms ]+)',
+                gcodeText,
+                re.IGNORECASE
+            )
+            if estTimeMatch:
+                parsedSeconds = parseDurationToSeconds(estTimeMatch.group(1))
+                if parsedSeconds is not None:
+                    values['printTimeSec'] = str(parsedSeconds)
+
         # ; total layer number: 140
         layerMatch = re.search(r';\s*total layer number:\s*(\d+)', gcodeText, re.IGNORECASE)
         if layerMatch:
             values['totalLayers'] = layerMatch.group(1)
+
+        # Fallback: ; total layers count = 127
+        if 'totalLayers' not in values:
+            layerMatch2 = re.search(r';\s*total layers count\s*=\s*(\d+)', gcodeText, re.IGNORECASE)
+            if layerMatch2:
+                values['totalLayers'] = layerMatch2.group(1)
 
         # ; model label id: 840
         objectsMatch = re.search(r';\s*model label id:\s*([0-9,]+)', gcodeText, re.IGNORECASE)
@@ -214,6 +234,52 @@ class OrcaGcodeExtractor:
         if 'filamentPurgeGrams' not in values:
             values['filamentPurgeGrams'] = '0'
 
+        # === Extract thumbnails from G-code comments ===
+        # Format: ; thumbnail begin WxH SIZE
+        #         ; base64data...
+        #         ; thumbnail end
+        thumbnails = _extractThumbnailsFromGcode(gcodeText)
+        if thumbnails:
+            values['thumbnails'] = thumbnails
+            # Use the largest thumbnail as the main plate image
+            largestThumb = max(thumbnails, key=lambda t: t.get('width', 0) * t.get('height', 0))
+            values['plateImageBase64'] = largestThumb.get('data', '')
+
+        # === Toolchanger / Multi-extruder support ===
+        # Detect gcode_flavor (Klipper, Marlin, etc.)
+        gcodeFlavorMatch = re.search(r';\s*gcode_flavor\s*=\s*(\w+)', gcodeText, re.IGNORECASE)
+        if gcodeFlavorMatch:
+            values['gcode_flavor'] = gcodeFlavorMatch.group(1).strip()
+
+        # Count extruders used (from filament arrays or T commands)
+        extruderColorsMatch = re.search(r';\s*extruder_colour\s*=\s*([^\n]+)', gcodeText, re.IGNORECASE)
+        if extruderColorsMatch:
+            colors = [c.strip() for c in extruderColorsMatch.group(1).split(';') if c.strip()]
+            values['extruderCount'] = str(len(colors))
+            values['extruderColors'] = colors
+
+        # Count tool changes for toolchangers (Tx commands where x is 0-9)
+        toolChangePattern = re.compile(r'^T(\d+)\s*$', re.MULTILINE)
+        toolChanges = toolChangePattern.findall(gcodeText)
+        if toolChanges:
+            # Count unique tools used
+            uniqueTools = set(toolChanges)
+            values['toolsUsed'] = sorted([int(t) for t in uniqueTools])
+            # Count total tool change operations (excluding initial tool selection)
+            toolChangeCount = len(toolChanges) - 1 if len(toolChanges) > 1 else 0
+            if toolChangeCount > 0:
+                values['toolChanges'] = str(toolChangeCount)
+
+        # Extract bed temperature
+        bedTempMatch = re.search(r';\s*(?:hot_plate_temp|bed_temperature)\s*=\s*(\d+)', gcodeText, re.IGNORECASE)
+        if bedTempMatch:
+            values['buildPlateTemperature'] = bedTempMatch.group(1)
+
+        # Extract nozzle temperature
+        nozzleTempMatch = re.search(r';\s*nozzle_temperature\s*=\s*(\d+)', gcodeText, re.IGNORECASE)
+        if nozzleTempMatch:
+            values['hotendTemperature'] = nozzleTempMatch.group(1)
+
         # === Set default values ===
         values.setdefault('slicerType', 'OrcaSlicer')
         values.setdefault('estimatedPowerConsumptionWh', '0')
@@ -222,4 +288,78 @@ class OrcaGcodeExtractor:
         values.setdefault('objects', [])
         values.setdefault('orderedObjects', [])
 
-        return ParsedValues(fieldValues=values, meta={'slicer': 'orca'})
+        meta: Dict[str, Any] = {'slicer': 'orca'}
+        if values.get('gcode_flavor', '').lower() == 'klipper':
+            meta['isKlipper'] = True
+        if values.get('toolsUsed'):
+            meta['isToolchanger'] = len(values['toolsUsed']) > 1
+
+        return ParsedValues(fieldValues=values, meta=meta)
+
+
+def _extractThumbnailsFromGcode(gcodeText: str) -> List[Dict[str, Any]]:
+    """Extract thumbnails embedded in G-code comments.
+
+    Supports both OrcaSlicer/PrusaSlicer format:
+    ; thumbnail begin WxH SIZE
+    ; base64data...
+    ; thumbnail end
+
+    And THUMBNAIL_BLOCK format:
+    ; THUMBNAIL_BLOCK_START
+    ; thumbnail begin WxH SIZE
+    ; base64data...
+    ; thumbnail end
+    ; THUMBNAIL_BLOCK_END
+    """
+    thumbnails: List[Dict[str, Any]] = []
+
+    # Pattern to match thumbnail blocks
+    # Matches: ; thumbnail begin 300x300 7516
+    thumbnailPattern = re.compile(
+        r';\s*thumbnail begin\s+(\d+)x(\d+)\s+(\d+)\s*\n(.*?)\n;\s*thumbnail end',
+        re.DOTALL | re.IGNORECASE
+    )
+
+    for match in thumbnailPattern.finditer(gcodeText):
+        width = int(match.group(1))
+        height = int(match.group(2))
+        expectedSize = int(match.group(3))
+        rawData = match.group(4)
+
+        # Clean up the base64 data - remove comment prefixes and whitespace
+        lines = rawData.split('\n')
+        base64Lines = []
+        for line in lines:
+            # Remove leading semicolon and whitespace
+            cleanLine = line.lstrip('; \t')
+            if cleanLine:
+                base64Lines.append(cleanLine)
+
+        base64Data = ''.join(base64Lines)
+
+        # Validate base64 data
+        try:
+            # Try to decode to verify it's valid base64
+            decoded = base64.b64decode(base64Data)
+            # Check if it looks like a PNG (starts with PNG magic bytes)
+            isPng = decoded[:8] == b'\x89PNG\r\n\x1a\n'
+            thumbnails.append({
+                'width': width,
+                'height': height,
+                'size': len(decoded),
+                'format': 'png' if isPng else 'unknown',
+                'data': base64Data,
+            })
+        except Exception:
+            # If decoding fails, still include it but mark as potentially invalid
+            thumbnails.append({
+                'width': width,
+                'height': height,
+                'expectedSize': expectedSize,
+                'format': 'unknown',
+                'data': base64Data,
+                'valid': False,
+            })
+
+    return thumbnails
