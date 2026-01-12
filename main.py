@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - optional dependency during local dev
 if TYPE_CHECKING:
     from google.cloud.logging_v2.logger import Logger as CloudLogger
 
-from parsing.enrichers.bambu_3mf import enrichBambuAttachments, extractObjectsFromPlateJson
+from parsing.enrichers.bambu_3mf import enrichBambuAttachments, extractObjectsFromPlateJson, extractPlateName
 from parsing.file_loader import loadInput
 from parsing.gcode_view import buildGcodeView
 from parsing.router import extractParsedValues
@@ -128,16 +128,27 @@ async def processFile(request: Request, gcodeUpload: UploadFile = File(...)):
                 parsedValues.fieldValues['objects'] = objectsPayload['objects']
                 parsedValues.fieldValues['objectsOnPlate'] = str(objectsPayload['objectsOnPlate'])
 
+        # Extract plate name (albumName) from model_settings.config (for 3MF files)
+        albumName = None
+        if gview.containerType == '3mf':
+            albumName = extractPlateName(gview)
+
         # Normalize response
         responseValues = normalizeToBambuFields(parsedValues, guess)
 
         logRequestStatus('process', True, f'Successfully processed {fileName} (plate {gview.plateNumber})')
 
-        return {
+        response = {
             **imagesPayload,
             'plateNumber': gview.plateNumber,  # Include in response
             'values': responseValues,
         }
+
+        # Add albumName if found
+        if albumName:
+            response['albumName'] = albumName
+
+        return response
 
     except ValueError as exc:
         error_msg = str(exc)

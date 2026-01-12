@@ -7,6 +7,7 @@ import zipfile
 import io
 import base64
 import re
+import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 
@@ -46,6 +47,57 @@ class PlateInfo:
     metadata: PlateMetadata
     hasGcode: bool
     quickAnalysis: QuickAnalysis
+    albumName: Optional[str] = None
+
+
+def extract_plate_names_from_config(archive: zipfile.ZipFile, all_files: List[str]) -> Dict[int, str]:
+    """
+    Extract all plate names from model_settings.config
+
+    Args:
+        archive: Open ZipFile object
+        all_files: List of all files in archive
+
+    Returns:
+        Dictionary mapping plate number to plate name
+    """
+    plate_names: Dict[int, str] = {}
+
+    # Look for model_settings.config
+    config_path = None
+    for filepath in all_files:
+        if filepath.lower() == 'metadata/model_settings.config':
+            config_path = filepath
+            break
+
+    if not config_path:
+        return plate_names
+
+    try:
+        config_data = archive.read(config_path).decode('utf-8')
+        root = ET.fromstring(config_data)
+
+        # Find all plate elements
+        for plate in root.findall('.//plate'):
+            plater_id = None
+            plater_name = None
+
+            for metadata in plate.findall('metadata'):
+                key = metadata.get('key', '')
+                value = metadata.get('value', '')
+
+                if key == 'plater_id':
+                    plater_id = int(value)
+                elif key == 'plater_name':
+                    plater_name = value
+
+            if plater_id is not None and plater_name:
+                plate_names[plater_id] = plater_name
+
+    except Exception as e:
+        print(f"Error extracting plate names: {e}")
+
+    return plate_names
 
 
 def scan_plates(fileBytes: bytes, fileName: Optional[str]) -> dict:
@@ -74,8 +126,11 @@ def scan_plates(fileBytes: bytes, fileName: Optional[str]) -> dict:
             plates_data = []
             plate_numbers = extract_plate_numbers(gcode_files)
 
+            # Extract plate names from model_settings.config
+            plate_names = extract_plate_names_from_config(archive, all_files)
+
             for plate_num in sorted(plate_numbers):
-                plate_info = extract_plate_info(archive, all_files, plate_num)
+                plate_info = extract_plate_info(archive, all_files, plate_num, plate_names)
                 plates_data.append(plate_info)
 
             return {
@@ -111,7 +166,7 @@ def extract_plate_numbers(gcode_files: List[str]) -> List[int]:
     return plate_numbers
 
 
-def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num: int) -> PlateInfo:
+def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num: int, plate_names: Optional[Dict[int, str]] = None) -> PlateInfo:
     """
     Extract complete information for a specific plate
 
@@ -119,6 +174,7 @@ def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num
         archive: Open ZipFile object
         all_files: List of all files in archive
         plate_num: Plate number to extract
+        plate_names: Optional dictionary mapping plate numbers to plate names
 
     Returns:
         PlateInfo object with all plate data
@@ -161,6 +217,9 @@ def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num
         except:
             pass  # If analysis fails, return empty QuickAnalysis
 
+    # Get plate name (albumName)
+    album_name = plate_names.get(plate_num) if plate_names else None
+
     return PlateInfo(
         plateNumber=plate_num,
         gcodePath=gcode_path or f'Metadata/plate_{plate_num}.gcode',
@@ -168,7 +227,8 @@ def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num
         images=images,
         metadata=metadata,
         hasGcode=gcode_exists,
-        quickAnalysis=quick_analysis
+        quickAnalysis=quick_analysis,
+        albumName=album_name
     )
 
 
