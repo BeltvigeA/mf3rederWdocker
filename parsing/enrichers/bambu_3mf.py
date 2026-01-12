@@ -3,9 +3,96 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Any, Dict, List
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def extractPlateName(gview) -> Optional[str]:
+    """
+    Extract the plate name (plater_name) from model_settings.config in 3MF attachments.
+
+    The plate name is stored in the XML structure:
+    <plate>
+      <metadata key="plater_id" value="1"/>
+      <metadata key="plater_name" value="Album Name Here"/>
+      ...
+    </plate>
+
+    Returns:
+        The plate name string if found, otherwise None
+    """
+    plateNum = getattr(gview, 'plateNumber', 1)
+
+    # Look for model_settings.config in attachments
+    configPatterns = [
+        'Metadata/model_settings.config',
+        'model_settings.config',
+    ]
+
+    configData = None
+    for pattern in configPatterns:
+        # Try exact match
+        if pattern in gview.attachments:
+            try:
+                configData = gview.attachments[pattern].decode('utf-8')
+                logger.info(f'✅ Found model_settings.config: {pattern}')
+                break
+            except UnicodeDecodeError as e:
+                logger.warning(f'⚠️ Failed to decode {pattern}: {e}')
+
+        # Try case-insensitive search
+        patternLower = pattern.lower()
+        for attachmentPath, data in gview.attachments.items():
+            if attachmentPath.lower() == patternLower:
+                try:
+                    configData = data.decode('utf-8')
+                    logger.info(f'✅ Found model_settings.config: {attachmentPath} (case-insensitive)')
+                    break
+                except UnicodeDecodeError as e:
+                    logger.warning(f'⚠️ Failed to decode {attachmentPath}: {e}')
+
+        if configData:
+            break
+
+    if not configData:
+        logger.warning('❌ model_settings.config not found in attachments')
+        return None
+
+    try:
+        # Parse XML
+        root = ET.fromstring(configData)
+
+        # Find all plate elements
+        for plate in root.findall('.//plate'):
+            # Get the plater_id for this plate
+            platerId = None
+            platerName = None
+
+            for metadata in plate.findall('metadata'):
+                key = metadata.get('key', '')
+                value = metadata.get('value', '')
+
+                if key == 'plater_id':
+                    platerId = int(value)
+                elif key == 'plater_name':
+                    platerName = value
+
+            # Check if this is the plate we're looking for
+            if platerId == plateNum and platerName:
+                logger.info(f'🏷️ Found plate name for plate {plateNum}: "{platerName}"')
+                return platerName
+
+        logger.warning(f'❌ No plate name found for plate {plateNum} in model_settings.config')
+        return None
+
+    except ET.ParseError as e:
+        logger.warning(f'⚠️ Failed to parse model_settings.config XML: {e}')
+        return None
+    except Exception as e:
+        logger.warning(f'⚠️ Error extracting plate name: {e}')
+        return None
 
 
 def enrichBambuAttachments(gview, parsedValues: Dict[str, Any]) -> Dict[str, str]:
