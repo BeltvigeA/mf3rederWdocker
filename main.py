@@ -112,6 +112,13 @@ async def processFile(request: Request, gcodeUpload: UploadFile = File(...)):
         if gview.containerType == '3mf' and guess.name in ('bambu', 'orca'):
             imagesPayload = enrichBambuAttachments(gview, parsedValues)
 
+        # For raw G-code files, check if thumbnails were extracted from embedded base64
+        if gview.containerType == 'gcode' and parsedValues.fieldValues.get('plateImageBase64'):
+            imagesPayload['plateImage'] = parsedValues.fieldValues['plateImageBase64']
+            # Also include all thumbnails if available
+            if parsedValues.fieldValues.get('thumbnails'):
+                imagesPayload['thumbnails'] = parsedValues.fieldValues['thumbnails']
+
         # Extract objects from plate_X.json (for 3MF files)
         objectsPayload = {}
         if gview.containerType == '3mf':
