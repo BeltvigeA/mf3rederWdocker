@@ -12,6 +12,21 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 
 
+def sanitize_plate_name(name: str) -> str:
+    """
+    Sanitize plate name by replacing '-' and '_' with spaces.
+
+    Args:
+        name: Original plate name
+
+    Returns:
+        Sanitized plate name with '-' and '_' replaced by spaces
+    """
+    if not name:
+        return name
+    return name.replace('-', ' ').replace('_', ' ')
+
+
 @dataclass
 class ImageInfo:
     path: str
@@ -92,7 +107,7 @@ def extract_plate_names_from_config(archive: zipfile.ZipFile, all_files: List[st
                     plater_name = value
 
             if plater_id is not None and plater_name:
-                plate_names[plater_id] = plater_name
+                plate_names[plater_id] = sanitize_plate_name(plater_name)
 
     except Exception as e:
         print(f"Error extracting plate names: {e}")

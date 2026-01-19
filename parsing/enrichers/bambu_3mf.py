@@ -9,6 +9,21 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def sanitize_plate_name(name: str) -> str:
+    """
+    Sanitize plate name by replacing '-' and '_' with spaces.
+
+    Args:
+        name: Original plate name
+
+    Returns:
+        Sanitized plate name with '-' and '_' replaced by spaces
+    """
+    if not name:
+        return name
+    return name.replace('-', ' ').replace('_', ' ')
+
+
 def extractPlateName(gview) -> Optional[str]:
     """
     Extract the plate name (plater_name) from model_settings.config in 3MF attachments.
@@ -81,8 +96,9 @@ def extractPlateName(gview) -> Optional[str]:
 
             # Check if this is the plate we're looking for
             if platerId == plateNum and platerName:
-                logger.info(f'🏷️ Found plate name for plate {plateNum}: "{platerName}"')
-                return platerName
+                sanitizedName = sanitize_plate_name(platerName)
+                logger.info(f'🏷️ Found plate name for plate {plateNum}: "{platerName}" -> "{sanitizedName}"')
+                return sanitizedName
 
         logger.warning(f'❌ No plate name found for plate {plateNum} in model_settings.config')
         return None
