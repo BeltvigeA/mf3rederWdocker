@@ -7,6 +7,7 @@ from .extractors.base import ParsedValues
 from .extractors.heuristic import HeuristicExtractor
 from .extractors.easyprint_gcode import EasyPrintGcodeExtractor
 from .extractors.orca_gcode import OrcaGcodeExtractor
+from .extractors.snapmaker_toolchanger import SnapmakerToolchangerExtractor
 from .gcode_view import GCodeView
 from .slicer_detect import SlicerGuess
 
@@ -18,6 +19,7 @@ REGISTRY: Dict[Tuple[str, str], object] = {
     ('orca', '3mf'): OrcaGcodeExtractor(),
     ('easyprint', 'gcode'): EasyPrintGcodeExtractor(),
     ('easyprint', '3mf'): EasyPrintGcodeExtractor(),
+    ('snapmaker', 'gcode'): SnapmakerToolchangerExtractor(),
 }
 
 
