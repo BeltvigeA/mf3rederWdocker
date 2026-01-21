@@ -119,17 +119,105 @@ def extract_plate_names_from_config(archive: zipfile.ZipFile, all_files: List[st
     return plate_names
 
 
-def scan_plates(fileBytes: bytes, fileName: Optional[str]) -> dict:
+def scan_gcode_file(fileBytes: bytes, fileName: Optional[str]) -> dict:
     """
-    Main function to scan 3MF file for all plates
+    Scan a raw .gcode file and extract plate information.
 
     Args:
-        fileBytes: Raw bytes of the 3MF file
+        fileBytes: Raw bytes of the GCODE file
+        fileName: Original filename
+
+    Returns:
+        Dictionary with plate information (single plate)
+    """
+    from parsing.file_loader import loadInput
+    from parsing.gcode_view import buildGcodeView
+    from parsing.slicer_detect import detectSlicer
+    from parsing.router import extractParsedValues
+
+    try:
+        # Load and parse the gcode file
+        source = loadInput(fileBytes, fileName)
+        gview = buildGcodeView(source)
+
+        # Detect slicer and extract values
+        guess = detectSlicer(gview)
+        parsedValues = extractParsedValues(gview, guess)
+
+        # Extract thumbnail image from gcode (embedded base64)
+        plate_image = None
+        if parsedValues.fieldValues.get('plateImageBase64'):
+            plate_image = parsedValues.fieldValues['plateImageBase64']
+
+        # Build quick analysis from parsed values
+        quick_analysis = QuickAnalysis(
+            estimatedPrintTime=parsedValues.fieldValues.get('printTime'),
+            filamentWeight=parsedValues.fieldValues.get('filamentUsedG'),
+            filamentLength=parsedValues.fieldValues.get('filamentUsedM'),
+            material=parsedValues.fieldValues.get('filamentType'),
+            layerCount=int(parsedValues.fieldValues.get('layerCount', 0)) if parsedValues.fieldValues.get('layerCount') else None
+        )
+
+        # Create plate info
+        plate_info = PlateInfo(
+            plateNumber=1,
+            gcodePath=fileName or 'uploaded.gcode',
+            gcodeSize=len(fileBytes),
+            metadata=PlateMetadata(
+                jsonPath='',
+                jsonExists=False,
+                md5Path='',
+                md5Exists=False
+            ),
+            hasGcode=True,
+            quickAnalysis=quick_analysis,
+            albumName=None,
+            plateImage=plate_image,
+            pickImage=None,
+            topImage=None,
+            plateNoLightImage=None
+        )
+
+        return {
+            'success': True,
+            'fileName': fileName,
+            'totalPlates': 1,
+            'fileSize': len(fileBytes),
+            'plates': [asdict(plate_info)]
+        }
+
+    except Exception as e:
+        raise Exception(f"Failed to scan gcode file: {str(e)}")
+
+
+def scan_plates(fileBytes: bytes, fileName: Optional[str]) -> dict:
+    """
+    Main function to scan 3MF or GCODE file for all plates
+
+    Args:
+        fileBytes: Raw bytes of the 3MF or GCODE file
         fileName: Original filename
 
     Returns:
         Dictionary with plate information
     """
+    # Check if this is a .gcode file (not a zip archive)
+    is_gcode_file = False
+    if fileName and fileName.lower().endswith('.gcode'):
+        is_gcode_file = True
+    else:
+        # Try to detect if it's a zip file
+        try:
+            with zipfile.ZipFile(io.BytesIO(fileBytes)) as _:
+                pass  # It's a valid zip file
+        except zipfile.BadZipFile:
+            # Not a zip file, assume it's a gcode file
+            is_gcode_file = True
+
+    if is_gcode_file:
+        return scan_gcode_file(fileBytes, fileName)
+
+    # Process as 3MF file
     try:
         with zipfile.ZipFile(io.BytesIO(fileBytes)) as archive:
             # Get all file names
