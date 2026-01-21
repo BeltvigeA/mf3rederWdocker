@@ -58,11 +58,15 @@ class PlateInfo:
     plateNumber: int
     gcodePath: str
     gcodeSize: int
-    images: Dict[str, ImageInfo]
     metadata: PlateMetadata
     hasGcode: bool
     quickAnalysis: QuickAnalysis
     albumName: Optional[str] = None
+    # Images as flat base64 strings (matching /process endpoint format)
+    plateImage: Optional[str] = None
+    pickImage: Optional[str] = None
+    topImage: Optional[str] = None
+    plateNoLightImage: Optional[str] = None
 
 
 def extract_plate_names_from_config(archive: zipfile.ZipFile, all_files: List[str]) -> Dict[int, str]:
@@ -203,14 +207,17 @@ def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num
         gcode_exists = True
         gcode_size = archive.getinfo(gcode_path).file_size
 
-    # Extract images
-    images = {
-        'plate': extract_image_info(archive, all_files, plate_num, 'plate', '.png'),
-        'plateSmall': extract_image_info(archive, all_files, plate_num, 'plate', '_small.png'),
-        'pick': extract_image_info(archive, all_files, plate_num, 'pick', '.png'),
-        'top': extract_image_info(archive, all_files, plate_num, 'top', '.png'),
-        'plateNoLight': extract_image_info(archive, all_files, plate_num, 'plate_no_light', '.png')
-    }
+    # Extract images as flat base64 strings (matching /process endpoint format)
+    plate_img_info = extract_image_info(archive, all_files, plate_num, 'plate', '.png')
+    pick_img_info = extract_image_info(archive, all_files, plate_num, 'pick', '.png')
+    top_img_info = extract_image_info(archive, all_files, plate_num, 'top', '.png')
+    plate_no_light_img_info = extract_image_info(archive, all_files, plate_num, 'plate_no_light', '.png')
+
+    # Convert to flat base64 strings (None if not found)
+    plate_image = plate_img_info.base64 if plate_img_info.exists else None
+    pick_image = pick_img_info.base64 if pick_img_info.exists else None
+    top_image = top_img_info.base64 if top_img_info.exists else None
+    plate_no_light_image = plate_no_light_img_info.base64 if plate_no_light_img_info.exists else None
 
     # Extract metadata paths
     json_path = find_file_for_plate(all_files, plate_num, '.json', 'plate')
@@ -239,11 +246,14 @@ def extract_plate_info(archive: zipfile.ZipFile, all_files: List[str], plate_num
         plateNumber=plate_num,
         gcodePath=gcode_path or f'Metadata/plate_{plate_num}.gcode',
         gcodeSize=gcode_size,
-        images=images,
         metadata=metadata,
         hasGcode=gcode_exists,
         quickAnalysis=quick_analysis,
-        albumName=album_name
+        albumName=album_name,
+        plateImage=plate_image,
+        pickImage=pick_image,
+        topImage=top_image,
+        plateNoLightImage=plate_no_light_image
     )
 
 
