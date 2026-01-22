@@ -98,6 +98,7 @@ class BambuGcodeExtractor:
             for index, weight in enumerate(all_weights):
                 if weight > 0.01:
                     item = {
+                        'amsIndex': index,
                         'lengthMm': all_lengths[index] if index < len(all_lengths) else None,
                         'volumeCm3': all_volumes[index] if index < len(all_volumes) else None,
                         'weightG': weight,
@@ -105,6 +106,7 @@ class BambuGcodeExtractor:
                         'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
                     }
                     analysis.append(item)
+
         values['filamentAnalysis'] = analysis
 
         changes = re.findall(r'M620\s+S\d+A', gcodeText)

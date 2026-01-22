@@ -191,6 +191,14 @@ class EasyPrintGcodeExtractor:
         spool['weightG'] = filamentWeightG if filamentWeightG is not None else 0.0
         spool['filamentType'] = filamentTypes[0] if filamentTypes else filamentType
         spool['filamentColor'] = filamentColors[0] if filamentColors else filamentColour
+        
+        # Determine if it's AMS or Toolchanger
+        # EasyPrint/Prusa with single nozzle multi-material is more like AMS
+        if meta.get('slicerBase') == 'prusaslicer' and meta.get('nozzleDiameter'):
+             spool['amsIndex'] = 0 # Default for single nozzle
+        else:
+             spool['toolIndex'] = 0
+
 
         if spool:
             fieldValues['filamentAnalysis'].append(spool)

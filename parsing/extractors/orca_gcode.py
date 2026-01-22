@@ -120,6 +120,12 @@ class OrcaGcodeExtractor:
                 re.IGNORECASE
             )
 
+        # Pre-parse printer model for amsIndex/toolIndex selection
+        printerModelMatch = re.search(r';\s*printer_model\s*=\s*([^\n;]+)', gcodeText, re.IGNORECASE)
+        if printerModelMatch:
+            values['printer_model'] = printerModelMatch.group(1).strip()
+
+
         weights = []
         if weightMatch:
             # Parse all weights, but filter out unused filaments (< 0.01g)
@@ -136,6 +142,8 @@ class OrcaGcodeExtractor:
             all_lengths = [float(piece.strip()) for piece in lengthMatch.group(1).split(',') if piece.strip()] if lengthMatch else []
             all_volumes = [float(piece.strip()) for piece in volumeMatch.group(1).split(',') if piece.strip()] if volumeMatch else []
 
+            isBambu = 'bambu' in values.get('printer_model', '').lower()
+            
             # Only include filaments with weight > 0.01g
             for index, weight in enumerate(all_weights):
                 if weight > 0.01:
@@ -146,7 +154,12 @@ class OrcaGcodeExtractor:
                         'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
                         'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
                     }
+                    if isBambu:
+                        item['amsIndex'] = index
+                    else:
+                        item['toolIndex'] = index
                     analysis.append(item)
+
 
         elif lengthMatch:
             # If no weight but we have length, try to calculate weight
@@ -184,7 +197,12 @@ class OrcaGcodeExtractor:
                             'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
                             'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
                         }
+                        if 'bambu' in values.get('printer_model', '').lower():
+                            item['amsIndex'] = index
+                        else:
+                            item['toolIndex'] = index
                         analysis.append(item)
+
 
 
                 if weights:
