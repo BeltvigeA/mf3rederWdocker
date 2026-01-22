@@ -33,6 +33,19 @@ ORCA_MARKERS = (
 def detectSlicer(gview: GCodeView) -> SlicerGuess:
     lowerHead = [line.lower() for line in gview.headLines]
 
+    # Check for Snapmaker markers first (as it might also have Orca/Bambu markers)
+    # Snapmaker U1 puts config at the end of the file, so check tail as well
+    tailLines = [line.lower() for line in gview.lines[-1000:]]
+    checkLines = lowerHead + tailLines
+
+    snapmakerHits = [
+        'printer_model = snapmaker', 
+        'printer_model = j1', 
+        'printer_model = u1'
+    ]
+    if any(m in line for line in checkLines for m in snapmakerHits):
+        return SlicerGuess(name='snapmaker', confidence=1.0, hints={'markers': ['snapmaker']})
+
     # Check for Orca Slicer first (since it's a fork of Bambu Studio)
     orcaHits = [marker for marker in ORCA_MARKERS if any(marker in line for line in lowerHead)]
     if orcaHits:

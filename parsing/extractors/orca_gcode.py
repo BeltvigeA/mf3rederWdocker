@@ -192,7 +192,7 @@ class OrcaGcodeExtractor:
         # Look for config values that might be useful
         configPatterns = {
             'enable_support': r';\s*enable_support\s*=\s*(\d+)',
-            'filament_type': r';\s*filament_type\s*=\s*([^\n;]+)',
+            'filament_type': r';\s*filament_type\s*=\s*([^\n]+)',
             'layer_height': r';\s*layer_height\s*=\s*([0-9.]+)',
             'nozzle_diameter': r';\s*nozzle_diameter\s*=\s*([0-9.]+)',
             'sparse_infill_density': r';\s*sparse_infill_density\s*=\s*([0-9.]+%?)',
