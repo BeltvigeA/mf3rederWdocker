@@ -153,9 +153,11 @@ class OrcaGcodeExtractor:
                         'weightG': weight,
                         'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
                         'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
-                        'amsIndex': index,
-                        'toolIndex': index,
                     }
+                    if isBambu:
+                        item['amsIndex'] = index
+                    else:
+                        item['toolIndex'] = index
                     analysis.append(item)
 
 
@@ -195,9 +197,11 @@ class OrcaGcodeExtractor:
                             'weightG': weight,
                             'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
                             'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
-                            'amsIndex': index,
-                            'toolIndex': index,
                         }
+                        if isBambu:
+                            item['amsIndex'] = index
+                        else:
+                            item['toolIndex'] = index
                         analysis.append(item)
 
 
@@ -207,10 +211,11 @@ class OrcaGcodeExtractor:
                     values['filamentWeights'] = weights
                     values['filamentUsedGrams'] = f"{sum(weights):.2f}"
 
-            # Add tools/usedTools for parity
-            values['tools'] = analysis
-            values['usedTools'] = [a for a in analysis if a.get('weightG', 0) > 0.01]
-            values['usedToolIndices'] = [a['toolIndex'] for a in values['usedTools']]
+            # Add tools/usedTools for parity ONLY if NOT a Bambu printer
+            if not isBambu:
+                values['tools'] = analysis
+                values['usedTools'] = [a for a in analysis if a.get('weightG', 0) > 0.01]
+                values['usedToolIndices'] = [a['toolIndex'] for a in values['usedTools']]
 
         values['filamentAnalysis'] = analysis
 

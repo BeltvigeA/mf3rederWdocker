@@ -28,11 +28,11 @@ def test_bambu_extraction():
     
     assert len(analysis) == 3
     assert analysis[0]['amsIndex'] == 0
-    assert analysis[0]['toolIndex'] == 0
+    assert 'toolIndex' not in analysis[0]
     assert analysis[1]['amsIndex'] == 1
-    assert analysis[1]['toolIndex'] == 1
+    assert 'toolIndex' not in analysis[1]
     assert analysis[2]['amsIndex'] == 2
-    assert analysis[2]['toolIndex'] == 2
+    assert 'toolIndex' not in analysis[2]
     print("Bambu test passed!")
 
 def test_orca_bambu_mode():
@@ -54,9 +54,9 @@ def test_orca_bambu_mode():
     
     assert len(analysis) == 2
     assert analysis[0]['amsIndex'] == 0
-    assert analysis[0]['toolIndex'] == 0
+    assert 'toolIndex' not in analysis[0]
     assert analysis[1]['amsIndex'] == 1
-    assert analysis[1]['toolIndex'] == 1
+    assert 'toolIndex' not in analysis[1]
     print("Orca Bambu mode passed!")
 
 def test_orca_toolchanger_mode():
@@ -78,9 +78,9 @@ def test_orca_toolchanger_mode():
     
     assert len(analysis) == 2
     assert analysis[0]['toolIndex'] == 0
-    assert analysis[0]['amsIndex'] == 0
+    assert 'amsIndex' not in analysis[0]
     assert analysis[1]['toolIndex'] == 1
-    assert analysis[1]['amsIndex'] == 1
+    assert 'amsIndex' not in analysis[1]
     print("Orca Toolchanger mode passed!")
 
 if __name__ == "__main__":

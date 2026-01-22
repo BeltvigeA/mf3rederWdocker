@@ -192,25 +192,24 @@ class EasyPrintGcodeExtractor:
         spool['filamentType'] = filamentTypes[0] if filamentTypes else filamentType
         spool['filamentColor'] = filamentColors[0] if filamentColors else filamentColour
         
-        # Determine if it's AMS or Toolchanger
-        # EasyPrint/Prusa with single nozzle multi-material is more like AMS
-        if meta.get('slicerBase') == 'prusaslicer' and meta.get('nozzleDiameter'):
-             spool['amsIndex'] = 0 # Default for single nozzle
-        else:
-             spool['toolIndex'] = 0
-
-
         if spool:
-            spool['amsIndex'] = 0 # Single nozzle multi-material usually starts at 0
-            spool['toolIndex'] = 0
+            # Determine if it's AMS or Toolchanger
+            # Prusa MMU / single nozzle multi-material acts like an AMS
+            if meta.get('slicerBase') == 'prusaslicer' and meta.get('nozzleDiameter'):
+                 spool['amsIndex'] = 0
+            else:
+                 spool['toolIndex'] = 0
+
             fieldValues['filamentAnalysis'].append(spool)
             if filamentWeightG is not None:
                 fieldValues['filamentWeights'] = [filamentWeightG]
+
                 
-        # Add tools/usedTools for parity
-        fieldValues['tools'] = fieldValues['filamentAnalysis']
-        fieldValues['usedTools'] = [a for a in fieldValues['filamentAnalysis'] if a.get('weightG', 0) > 0.01]
-        fieldValues['usedToolIndices'] = [a['toolIndex'] for a in fieldValues['usedTools']]
+        # Add tools/usedTools for parity ONLY if it's a physical toolchanger
+        if 'toolIndex' in spool:
+            fieldValues['tools'] = fieldValues['filamentAnalysis']
+            fieldValues['usedTools'] = [a for a in fieldValues['filamentAnalysis'] if a.get('weightG', 0) > 0.01]
+            fieldValues['usedToolIndices'] = [a['toolIndex'] for a in fieldValues['usedTools']]
 
 
 
