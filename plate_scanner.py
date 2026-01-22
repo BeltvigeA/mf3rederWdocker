@@ -64,7 +64,9 @@ class QuickAnalysis:
     estimatedPrintTime: Optional[str] = None
     printTimeSeconds: Optional[int] = None
     filamentWeight: Optional[str] = None
+    filamentWeightGrams: Optional[float] = None
     filamentLength: Optional[str] = None
+    filamentLengthMeters: Optional[float] = None
     material: Optional[str] = None
     layerCount: Optional[int] = None
     objectCount: Optional[int] = None
@@ -468,6 +470,7 @@ def analyze_gcode_quick(gcode_bytes: bytes) -> QuickAnalysis:
                 weights = [float(w.strip()) for w in weight_match.group(1).split(',') if w.strip()]
                 total_weight = sum(weights)
                 analysis.filamentWeight = f"{total_weight:.2f}g"
+                analysis.filamentWeightGrams = total_weight
             except:
                 pass
 
@@ -487,6 +490,7 @@ def analyze_gcode_quick(gcode_bytes: bytes) -> QuickAnalysis:
                     analysis.filamentLength = f"{total_length/1000:.2f}m"
                 else:
                     analysis.filamentLength = f"{total_length:.2f}mm"
+                analysis.filamentLengthMeters = total_length / 1000.0
             except:
                 pass
 

@@ -99,6 +99,7 @@ class BambuGcodeExtractor:
                 if weight > 0.01:
                     item = {
                         'amsIndex': index,
+                        'toolIndex': index,
                         'lengthMm': all_lengths[index] if index < len(all_lengths) else None,
                         'volumeCm3': all_volumes[index] if index < len(all_volumes) else None,
                         'weightG': weight,
@@ -108,6 +109,12 @@ class BambuGcodeExtractor:
                     analysis.append(item)
 
         values['filamentAnalysis'] = analysis
+
+        # Add tools/usedTools for parity
+        values['tools'] = analysis
+        values['usedTools'] = [a for a in analysis if a.get('weightG', 0) > 0.01]
+        values['usedToolIndices'] = [a['toolIndex'] for a in values['usedTools']]
+
 
         changes = re.findall(r'M620\s+S\d+A', gcodeText)
         values['filamentChanges'] = str(len(changes))

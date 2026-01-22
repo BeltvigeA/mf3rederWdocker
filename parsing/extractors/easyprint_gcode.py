@@ -201,9 +201,17 @@ class EasyPrintGcodeExtractor:
 
 
         if spool:
+            spool['amsIndex'] = 0 # Single nozzle multi-material usually starts at 0
+            spool['toolIndex'] = 0
             fieldValues['filamentAnalysis'].append(spool)
             if filamentWeightG is not None:
                 fieldValues['filamentWeights'] = [filamentWeightG]
+                
+        # Add tools/usedTools for parity
+        fieldValues['tools'] = fieldValues['filamentAnalysis']
+        fieldValues['usedTools'] = [a for a in fieldValues['filamentAnalysis'] if a.get('weightG', 0) > 0.01]
+        fieldValues['usedToolIndices'] = [a['toolIndex'] for a in fieldValues['usedTools']]
+
 
 
         if filamentWeightG is not None:

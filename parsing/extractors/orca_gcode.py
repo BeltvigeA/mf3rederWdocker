@@ -153,12 +153,11 @@ class OrcaGcodeExtractor:
                         'weightG': weight,
                         'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
                         'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
+                        'amsIndex': index,
+                        'toolIndex': index,
                     }
-                    if isBambu:
-                        item['amsIndex'] = index
-                    else:
-                        item['toolIndex'] = index
                     analysis.append(item)
+
 
 
         elif lengthMatch:
@@ -196,12 +195,11 @@ class OrcaGcodeExtractor:
                             'weightG': weight,
                             'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
                             'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
+                            'amsIndex': index,
+                            'toolIndex': index,
                         }
-                        if 'bambu' in values.get('printer_model', '').lower():
-                            item['amsIndex'] = index
-                        else:
-                            item['toolIndex'] = index
                         analysis.append(item)
+
 
 
 
@@ -209,7 +207,13 @@ class OrcaGcodeExtractor:
                     values['filamentWeights'] = weights
                     values['filamentUsedGrams'] = f"{sum(weights):.2f}"
 
+            # Add tools/usedTools for parity
+            values['tools'] = analysis
+            values['usedTools'] = [a for a in analysis if a.get('weightG', 0) > 0.01]
+            values['usedToolIndices'] = [a['toolIndex'] for a in values['usedTools']]
+
         values['filamentAnalysis'] = analysis
+
 
         # === Parse filament cost ===
         # ; filament cost = 3.05, 0.25
