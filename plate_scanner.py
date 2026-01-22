@@ -27,6 +27,23 @@ def sanitize_plate_name(name: str) -> str:
     return name.replace('-', ' ').replace('_', ' ')
 
 
+def format_seconds_to_duration(seconds: int) -> str:
+    """Format seconds into a human-readable duration string."""
+    if not seconds:
+        return "0s"
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    
+    parts = []
+    if h > 0: parts.append(f"{h}h")
+    if m > 0: parts.append(f"{m}m")
+    if s > 0 or not parts: parts.append(f"{s}s")
+    
+    return " ".join(parts)
+
+
+
 @dataclass
 class ImageInfo:
     path: str
@@ -151,12 +168,15 @@ def scan_gcode_file(fileBytes: bytes, fileName: Optional[str]) -> dict:
 
         # Build quick analysis from parsed values
         quick_analysis = QuickAnalysis(
-            estimatedPrintTime=parsedValues.fieldValues.get('printTime'),
-            filamentWeight=parsedValues.fieldValues.get('filamentUsedG'),
-            filamentLength=parsedValues.fieldValues.get('filamentUsedM'),
-            material=parsedValues.fieldValues.get('filamentType'),
-            layerCount=int(parsedValues.fieldValues.get('layerCount', 0)) if parsedValues.fieldValues.get('layerCount') else None
+            estimatedPrintTime=format_seconds_to_duration(int(parsedValues.fieldValues.get('printTimeSec', 0))),
+            printTimeSeconds=int(parsedValues.fieldValues.get('printTimeSec', 0)) if parsedValues.fieldValues.get('printTimeSec') else None,
+            filamentWeight=f"{parsedValues.fieldValues.get('filamentUsedGrams', '0')}g",
+            filamentLength=f"{parsedValues.fieldValues.get('filamentUsedMeters', '0')}m" if parsedValues.fieldValues.get('filamentUsedMeters') else None,
+            material=parsedValues.fieldValues.get('filament_type') or parsedValues.fieldValues.get('filamentType'),
+            layerCount=int(parsedValues.fieldValues.get('totalLayers', 0)) if parsedValues.fieldValues.get('totalLayers') else None,
+            objectCount=int(parsedValues.fieldValues.get('objectsOnPlate', 0)) if parsedValues.fieldValues.get('objectsOnPlate') else None
         )
+
 
         # Create plate info
         plate_info = PlateInfo(
@@ -414,67 +434,87 @@ def extract_image_info(archive: zipfile.ZipFile, all_files: List[str],
 
 def analyze_gcode_quick(gcode_bytes: bytes) -> QuickAnalysis:
     """
-    Quick analysis of GCODE file for basic metadata
-
-    Args:
-        gcode_bytes: Raw GCODE file bytes
-
-    Returns:
-        QuickAnalysis object with extracted data
+    Quick analysis of GCODE file for basic metadata.
+    Designed to work with Bambu Lab, OrcaSlicer, PrusaSlicer and standard headers.
     """
     try:
         # Decode GCODE
         gcode_text = gcode_bytes.decode('utf-8', errors='ignore')
-        lines = gcode_text.split('\n')[:500]  # Only check first 500 lines
+        # Check first 2000 lines for reliability (3MF headers can be long)
+        header_text = '\n'.join(gcode_text.split('\n')[:2000])
 
         analysis = QuickAnalysis()
 
-        for line in lines:
-            line = line.strip()
+        # 1. Print Time
+        # Bambu/Orca: ; model printing time: 1h 2m 3s; total estimated time: 1h 5m 6s
+        # Prusa: ; estimated printing time (normal mode) = 1h 2m 3s
+        time_match = re.search(r'(?:printing time|estimated printing time).*?[:=]\s*((?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s))', header_text, re.IGNORECASE)
+        if time_match:
+            hours = int(time_match.group(2)) if time_match.group(2) else 0
+            minutes = int(time_match.group(3)) if time_match.group(3) else 0
+            seconds = int(time_match.group(4)) if time_match.group(4) else 0
+            analysis.printTimeSeconds = hours * 3600 + minutes * 60 + seconds
+            analysis.estimatedPrintTime = time_match.group(1).strip()
 
-            # Print time
-            if 'estimated printing time' in line.lower():
-                match = re.search(r'(\d+)h\s*(\d+)m\s*(\d+)s', line, re.IGNORECASE)
-                if match:
-                    hours = int(match.group(1))
-                    minutes = int(match.group(2))
-                    seconds = int(match.group(3))
-                    total_seconds = hours * 3600 + minutes * 60 + seconds
-                    analysis.printTimeSeconds = total_seconds
-                    analysis.estimatedPrintTime = f"{hours}h {minutes}m {seconds}s"
+        # 2. Filament Weight [g]
+        # Bambu: ; total filament weight [g] : 95.10,353.22
+        # Prusa: ; filament used [g] = 152.74, 12.59
+        weight_match = re.search(r'filament used \[g\]\s*[=:]\s*([0-9., ]+)', header_text, re.IGNORECASE)
+        if not weight_match:
+            weight_match = re.search(r'total filament weight \[g\]\s*[=:]\s*([0-9., ]+)', header_text, re.IGNORECASE)
+        
+        if weight_match:
+            try:
+                weights = [float(w.strip()) for w in weight_match.group(1).split(',') if w.strip()]
+                total_weight = sum(weights)
+                analysis.filamentWeight = f"{total_weight:.2f}g"
+            except:
+                pass
 
-            # Filament weight
-            if 'total filament weight' in line.lower():
-                match = re.search(r'(\d+\.?\d*)\s*g', line, re.IGNORECASE)
-                if match:
-                    analysis.filamentWeight = f"{match.group(1)}g"
+        # 3. Filament Length [mm]
+        # Bambu: ; total filament length [mm] : 31379.69,116547.43
+        # Prusa: ; filament used [mm] = 51212.00, 4221.24
+        length_match = re.search(r'filament used \[mm\]\s*[=:]\s*([0-9., ]+)', header_text, re.IGNORECASE)
+        if not length_match:
+            length_match = re.search(r'total filament length \[mm\]\s*[=:]\s*([0-9., ]+)', header_text, re.IGNORECASE)
+        
+        if length_match:
+            try:
+                lengths = [float(l.strip()) for l in length_match.group(1).split(',') if l.strip()]
+                total_length = sum(lengths)
+                # Convert to meters if very long for readability
+                if total_length > 1000:
+                    analysis.filamentLength = f"{total_length/1000:.2f}m"
+                else:
+                    analysis.filamentLength = f"{total_length:.2f}mm"
+            except:
+                pass
 
-            # Filament length
-            if 'total filament used' in line.lower():
-                match = re.search(r'(\d+\.?\d*)\s*mm', line, re.IGNORECASE)
-                if match:
-                    analysis.filamentLength = f"{match.group(1)}mm"
+        # 4. Material Type
+        # Bambu: ; filament_type = PLA;PLA;PLA;PLA
+        material_match = re.search(r'filament_type\s*[=:]\s*([^\n;]+)', header_text, re.IGNORECASE)
+        if material_match:
+            types = [t.strip().strip('"') for t in material_match.group(1).replace(';', ',').split(',') if t.strip()]
+            if types:
+                # Use unique types
+                unique_types = sorted(list(set(types)))
+                analysis.material = "/".join(unique_types) if len(unique_types) > 1 else unique_types[0]
 
-            # Material type
-            if 'filament_type' in line.lower() or 'material' in line.lower():
-                for material in ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PC', 'PA', 'PVA']:
-                    if material in line.upper():
-                        analysis.material = material
-                        break
+        # 5. Layer Count
+        # ; total layer number: 140 or ; total layers count = 127
+        layer_match = re.search(r'(?:total layer number|total layers count)\s*[=:]\s*(\d+)', header_text, re.IGNORECASE)
+        if layer_match:
+            analysis.layerCount = int(layer_match.group(1))
 
-            # Layer count
-            if 'total_layer_count' in line.lower():
-                match = re.search(r'(\d+)', line)
-                if match:
-                    analysis.layerCount = int(match.group(1))
-
-            # Object count
-            if 'object' in line.lower() and 'count' in line.lower():
-                match = re.search(r'(\d+)', line)
-                if match:
-                    analysis.objectCount = int(match.group(1))
+        # 6. Object Count
+        # Bambu: ; model label id: 482,493...
+        objects_match = re.search(r'model label id:\s*([0-9,]+)', header_text, re.IGNORECASE)
+        if objects_match:
+            ids = [segment for segment in objects_match.group(1).split(',') if segment.strip()]
+            analysis.objectCount = len(ids)
 
         return analysis
+
 
     except Exception as e:
         print(f"Quick analysis error: {e}")
