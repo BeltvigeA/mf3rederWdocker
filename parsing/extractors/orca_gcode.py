@@ -32,6 +32,19 @@ class OrcaGcodeExtractor:
             hours, minutes, seconds = map(int, timeMatch.groups())
             values['printTimeSec'] = str(hours * 3600 + minutes * 60 + seconds)
 
+        # Parse filament types and colors (semi-colon separated)
+        filamentTypeMatch = re.search(r';\s*filament_type\s*=\s*(.*)', gcodeText, re.IGNORECASE)
+        filamentColorMatch = re.search(r';\s*(?:filament_colour|extruder_colour)\s*=\s*(.*)', gcodeText, re.IGNORECASE)
+
+        filamentTypes: List[str] = []
+        if filamentTypeMatch:
+            filamentTypes = [t.strip().strip('"') for t in filamentTypeMatch.group(1).split(';') if t.strip()]
+
+        filamentColors: List[str] = []
+        if filamentColorMatch:
+            filamentColors = [c.strip().strip('"') for c in filamentColorMatch.group(1).split(';') if c.strip()]
+
+
         # Fallback: PrusaSlicer/Klipper style format
         # ; estimated printing time (normal mode) = 43m 45s
         if 'printTimeSec' not in values:
@@ -130,8 +143,11 @@ class OrcaGcodeExtractor:
                         'lengthMm': all_lengths[index] if index < len(all_lengths) else None,
                         'volumeCm3': all_volumes[index] if index < len(all_volumes) else None,
                         'weightG': weight,
+                        'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
+                        'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
                     }
                     analysis.append(item)
+
         elif lengthMatch:
             # If no weight but we have length, try to calculate weight
             all_lengths = [float(piece.strip()) for piece in lengthMatch.group(1).split(',') if piece.strip()]
@@ -159,15 +175,17 @@ class OrcaGcodeExtractor:
                     volumeCm3 = volumeMm3 / 1000
                     weight = volumeCm3 * density
 
-                    # Only include if weight > 0.01g
                     if weight > 0.01:
                         weights.append(weight)
                         item = {
                             'lengthMm': length,
                             'volumeCm3': all_volumes[index] if index < len(all_volumes) else volumeCm3,
                             'weightG': weight,
+                            'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
+                            'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
                         }
                         analysis.append(item)
+
 
                 if weights:
                     values['filamentWeights'] = weights

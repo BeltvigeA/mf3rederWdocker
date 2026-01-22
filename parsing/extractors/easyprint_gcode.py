@@ -178,17 +178,25 @@ class EasyPrintGcodeExtractor:
         if filamentWeightG is None:
             filamentWeightG = deriveWeightGFromLength(filamentLengthMm, filamentDiameter, filamentDensity)
 
+        # Handle potential multi-filament in EasyPrint/Prusa
+        filamentTypes = [t.strip().strip('"') for t in (filamentType or "").split(';') if t.strip()]
+        filamentColors = [c.strip().strip('"') for c in (filamentColour or "").split(';') if c.strip()]
+
         spool: Dict[str, Any] = {}
         if filamentLengthMm is not None:
             spool['lengthMm'] = filamentLengthMm
         if filamentVolumeCm3 is not None:
             spool['volumeCm3'] = filamentVolumeCm3
-        if filamentWeightG is not None:
-            spool['weightG'] = filamentWeightG
+
+        spool['weightG'] = filamentWeightG if filamentWeightG is not None else 0.0
+        spool['filamentType'] = filamentTypes[0] if filamentTypes else filamentType
+        spool['filamentColor'] = filamentColors[0] if filamentColors else filamentColour
+
         if spool:
             fieldValues['filamentAnalysis'].append(spool)
             if filamentWeightG is not None:
                 fieldValues['filamentWeights'] = [filamentWeightG]
+
 
         if filamentWeightG is not None:
             fieldValues['filamentUsedGrams'] = f"{filamentWeightG:.4f}".rstrip('0').rstrip('.')

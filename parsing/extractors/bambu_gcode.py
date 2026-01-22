@@ -55,9 +55,10 @@ class BambuGcodeExtractor:
 
         if printTimeSec > 0:
             values['printTimeSec'] = str(printTimeSec)
-        weightMatch = re.search(r'total filament weight \[g\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
-        lengthMatch = re.search(r'total filament length \[mm\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
-        volumeMatch = re.search(r'total filament volume \[cm\^3\]\s*:\s*([0-9.,]+)', gcodeText, re.IGNORECASE)
+        weightMatch = re.search(r'total filament weight \[g\]\s*[=:]\s*([0-9., ]+)', gcodeText, re.IGNORECASE)
+        lengthMatch = re.search(r'total filament length \[mm\]\s*[=:]\s*([0-9., ]+)', gcodeText, re.IGNORECASE)
+        volumeMatch = re.search(r'total filament volume \[cm\^3\]\s*[=:]\s*([0-9., ]+)', gcodeText, re.IGNORECASE)
+
         weights = []
         if weightMatch:
             # Parse all weights, but filter out unused filaments (< 0.01g)
@@ -65,6 +66,27 @@ class BambuGcodeExtractor:
             weights = [w for w in all_weights if w > 0.01]
             values['filamentWeights'] = weights
             values['filamentUsedGrams'] = str(sum(weights)) if weights else '0'
+        # Parse filament types and colors (comma-separated in Bambu, semi-colon in some configs)
+        filamentTypeMatch = re.search(r';\s*filament_type\s*=\s*(.*)', gcodeText, re.IGNORECASE)
+        filamentColorMatch = re.search(r';\s*(?:filament_colour|extruder_colour)\s*=\s*(.*)', gcodeText, re.IGNORECASE)
+
+        filamentTypes: List[str] = []
+        if filamentTypeMatch:
+            rawTypes = filamentTypeMatch.group(1).strip()
+            if ';' in rawTypes:
+                filamentTypes = [t.strip().strip('"') for t in rawTypes.split(';')]
+            else:
+                filamentTypes = [t.strip().strip('"') for t in rawTypes.split(',')]
+
+        filamentColors: List[str] = []
+        if filamentColorMatch:
+            rawColors = filamentColorMatch.group(1).strip()
+            if ';' in rawColors:
+                filamentColors = [c.strip().strip('"') for c in rawColors.split(';')]
+            else:
+                filamentColors = [c.strip().strip('"') for c in rawColors.split(',')]
+
+
         analysis: List[Dict[str, Any]] = []
         if weightMatch:
             # Parse ALL values to get correct indices
@@ -79,9 +101,12 @@ class BambuGcodeExtractor:
                         'lengthMm': all_lengths[index] if index < len(all_lengths) else None,
                         'volumeCm3': all_volumes[index] if index < len(all_volumes) else None,
                         'weightG': weight,
+                        'filamentType': filamentTypes[index] if index < len(filamentTypes) else None,
+                        'filamentColor': filamentColors[index] if index < len(filamentColors) else None,
                     }
                     analysis.append(item)
         values['filamentAnalysis'] = analysis
+
         changes = re.findall(r'M620\s+S\d+A', gcodeText)
         values['filamentChanges'] = str(len(changes))
         purgeLength = 0.0
