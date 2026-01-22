@@ -89,11 +89,43 @@ class SnapmakerToolchangerExtractor:
                 }
             values['toolFilamentMap'] = toolFilamentMap
 
+            # Rebuild filamentAnalysis to include toolIndex and ensure correct mapping
+            # The base Orca extractor might filter out unused filaments, losing the index alignment.
+            # We rebuild it here using our parsed toolInfos which preserves indices.
+            newAnalysis = []
+            for t in toolInfos:
+                # Include if used OR if it has a type assigned (even if usage is 0)
+                if t.isUsed or t.filamentType:
+                    item = {
+                        'toolIndex': t.toolIndex,
+                        'weightG': t.filamentUsedGrams,
+                        'lengthMm': t.filamentUsedMm,
+                        # Volume is not directly parsed per tool in current logic, 
+                        # but we can estimate or leave it if not critical. 
+                        # Or we could try to map back from base analysis if needed.
+                        'volumeCm3': 0.0 # Placeholder or calculation if needed
+                    }
+                    
+                    # Try to match volume from base analysis if available and weights match
+                    # This is a heuristic matching
+                    if 'filamentAnalysis' in values:
+                        for baseItem in values['filamentAnalysis']:
+                            # If weights are very close, assume it's the same filament
+                            if baseItem.get('weightG') and abs(baseItem['weightG'] - (t.filamentUsedGrams or 0)) < 0.1:
+                                item['volumeCm3'] = baseItem.get('volumeCm3', 0.0)
+                                if not item['lengthMm']:
+                                    item['lengthMm'] = baseItem.get('lengthMm', 0.0)
+                                break
+                    
+                    newAnalysis.append(item)
+            
+            values['filamentAnalysis'] = newAnalysis
+
         # === Parse tool change operations ===
-        toolChanges = self._parseToolChanges(gcodeText)
-        if toolChanges:
-            values['toolChangeOperations'] = toolChanges
-            values['totalToolChanges'] = len(toolChanges)
+        # toolChanges = self._parseToolChanges(gcodeText)
+        # if toolChanges:
+        #     values['toolChangeOperations'] = toolChanges
+        #     values['totalToolChanges'] = len(toolChanges)
 
         # === Detect if this is a Snapmaker printer ===
         printerModel = values.get('printer_model', '')
